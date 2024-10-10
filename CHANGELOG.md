@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2024-10-10
+
+### Added
+- File .npmignore added
+
 ## [1.0.1] - 2024-10-10
 
 ### Changed

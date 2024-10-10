@@ -142,3 +142,4 @@ data/pem
 data/key
 config.js
 package-lock.json
+package/

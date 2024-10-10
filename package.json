@@ -1,6 +1,6 @@
 {
   "name": "shardy",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Framework for online games and applications on Node.js",
   "license": "MIT",
   "author": "Mopsicus <mail@mopsicus.ru>",
