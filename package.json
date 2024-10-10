@@ -5,6 +5,10 @@
   "license": "MIT",
   "author": "Mopsicus <mail@mopsicus.ru>",
   "homepage": "https://github.com/mopsicus/shardy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mopsicus/shardy.git"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
