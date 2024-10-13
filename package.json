@@ -34,7 +34,9 @@
     "websocket",
     "realtime",
     "server",
-    "socket"
+    "socket",
+    "typescript",
+    "nodejs"
   ],
   "bugs": {
     "url": "https://github.com/mopsicus/shardy/issues"

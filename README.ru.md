@@ -7,7 +7,7 @@
         <img alt="Shardy" height="256" width="256" src="media/logo.png">
     </picture>
 </p>
-<h3 align="center">Фреймворк для игр и приложений</h3>
+<h3 align="center">Фреймворк для онлайн игр и приложений</h3>
 <p align="center">
     <a href="#быстрый-старт">Быстрый старт</a> · <a href="./docs/index.md">Документация</a> · <a href="https://github.com/mopsicus/shardy-template">Пример сервиса</a> · <a href="https://github.com/mopsicus/shardy-unity">Unity клиент</a> · <a href="https://github.com/mopsicus/shardy/issues">Отчёт об ошибке</a>
 </p>

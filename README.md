@@ -7,7 +7,7 @@
         <img alt="Shardy" height="256" width="256" src="media/logo.png">
     </picture>
 </p>
-<h3 align="center">Framework for games and apps</h3>
+<h3 align="center">Framework for online games and apps</h3>
 <p align="center">
     <a href="#quick-start">Quick start</a> · <a href="./docs/index.md">Docs</a> · <a href="https://github.com/mopsicus/shardy-template">Service template</a> · <a href="https://github.com/mopsicus/shardy-unity">Unity client</a> · <a href="https://github.com/mopsicus/shardy/issues">Report Bug</a>
 </p>
