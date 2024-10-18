@@ -36,6 +36,7 @@
 - [Client](./reference.md#-client)
 - [Commander](./reference.md#-commander)
 - [Connection](./reference.md#-connection)
+- [Extension](./reference.md#-extension)
 - [Logger](./reference.md#-logger)
 - [Payload](./reference.md#-payload)
 - [Protocol](./reference.md#️-protocol)

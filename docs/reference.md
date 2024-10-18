@@ -343,6 +343,87 @@ Also, `Commander` manages heartbeat via the [`Pulse`](#-pulse) class and detects
 
 Shardy supports two types of transport: `TCP` and `WebSocket`. You can use either of them in your projects. The [Unity client](https://github.com/mopsicus/shardy-unity) also supports these transport types, so you can make WebGL builds with `WebSocket` transport and they will work out of the box.
 
+# 🧩 Extension
+
+Shardy provides an interface for making extension. Extension allow you to extend the service and call addon methods before or after the service methods. To apply extension with service, call `use` method for [`Server`](#️-server) before starting it.
+
+> [!IMPORTANT] 
+> You can create common extensions and share them with other services.
+
+```ts
+/**
+ * Extension interface for Shardy service
+ *
+ * @export
+ * @interface Extension
+ */
+export interface Extension {
+  /**
+   * Extension name
+   */
+  name: string;
+
+  /**
+   * Extension mode
+   */
+  mode: ExtensionMode;
+
+  /**
+   * Logger for extension
+   */
+  log: Logger;
+
+  /**
+   * Init extension
+   */
+  init(): Promise<void>;
+
+  /**
+   * Event when new client connected
+   */
+  onClientConnect(client: Client): Promise<void>;
+
+  /**
+   * Event when client disconnected
+   */
+  onClientDisconnect(client: Client, reason: DisconnectReason): Promise<void>;
+
+  /**
+   * Event when client made a handshake
+   */
+  onClientReady(client: Client): Promise<void>;
+
+  /**
+   * Event when service started
+   */
+  onServiceListening(): Promise<void>;
+
+  /**
+   * Event when service closed
+   */
+  onServiceClose(): Promise<void>;
+}
+```
+
+The `ExtensionMode` controls how the extension methods will be called: before or after the service methods.
+
+```ts
+/**
+ * Mode for extension processing order
+ */
+export enum ExtensionMode {
+  /**
+   * Use before service's callbacks
+   */
+  Before,
+
+  /**
+   * Use after service's callbacks
+   */
+  After,
+}
+```
+
 # 📝 Logger
 
 Shardy provides advanced `Logger` with tags, filters and scopes based on Winston.
@@ -685,6 +766,8 @@ server.start();
 
 You can control logging for all connected clients from `Server` - call `setFilter` or `clearFilter` and it will be applied to all of them.
 
+To apply [`extension`](#-extension) to your service, call the `use` method and pass an instance of the extension to it.
+
 ```ts
 /**
  * Creates an instance of Server
@@ -722,6 +805,13 @@ async setFilter(filter: LoggerFilter): Promise<void>;
  * Clear all log filters for all connected clients
  */
 async clearFilter(): Promise<void>;
+
+/**
+ * Use extension for service
+ *
+ * @param extension Extension instance
+ */
+async use(extension: Extension): Promise<void>;
 ```
 
 To stop your server, call `stop` - all connected clients will be disconnected with reason `ServerDown` and the server will be gracefully stopped.

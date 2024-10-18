@@ -19,6 +19,8 @@ As written in the section [linking multiple services together](./welcome.md#-lin
 
 It's also a good idea to wrap your services in Docker for quick deployment and management.
 
+Use [extensions](./reference.md#-extension) to improve your services. Each extension is executed `before` or `after` the service callbacks. Combine them to get more flexible services.
+
 In the future, I plan to implement a **plugin system** into Shardy, which will allow developers to extend the basic functionality and write their own middleware for the core processes. But right now, these are just plans. 🙄
 
 # 🚀 Run in production
