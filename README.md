@@ -242,6 +242,92 @@ export class MyJsonSerializer implements Serializer {
 }
 ```
 
+### Extensions
+
+You can enhance your Shardy-services with extensions. Just inherit the `Extension` class, implement methods, choose `ExtensionMode` to handle: before service callbacks or after, and apply it before starting the server.
+
+```ts
+const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, service, { validator, serializer, commands });
+server.use(new MyExtension());
+server.use(new MyExtension2());
+server.use(new MyExtension3());
+...
+server.start();
+```
+
+The extension callbacks are similar to the `Service` callbacks. 
+
+> [!NOTE]
+> You can share your extensions between your services or make them public through the NPM registry.
+
+```ts
+import { Extension, ExtensionMode } from 'shardy';
+
+export class MyExtension implements Extension {
+  /**
+   * Extension name
+   */
+  name: string = 'my-extension';
+
+  /**
+   * Extension mode, before or after
+   */
+  mode: ExtensionMode = ExtensionMode.After;
+
+  /**
+   * Logger instance
+   *
+   * @type {Logger}
+   */
+  log!: Logger;
+
+  async init(): Promise<void> {
+  // init extension
+  }
+
+  async onClientConnect(client: Client): Promise<void> {
+  // new client connected
+  }
+
+  async onClientDisconnect(client: Client, reason: DisconnectReason): Promise<void> {
+  // client disconnected
+  }
+
+  async onClientReady(client: Client): Promise<void> {
+  // client ready to work
+  }
+
+  async onServiceListening(): Promise<void> {
+  // service started
+  }
+
+  async onServiceClose(): Promise<void> {
+  // service stopped
+  }
+}
+```
+
+# 🗓️ Plans
+
+The plans are truly grand! It is to create an ecosystem for developers who will be able to build their game backend out of existing Shardy services like bricks.
+
+Listed below are some of the Shardy-services I plan to make:
+- service discovery
+- monitoring service
+- backup service
+
+Later, as needed, there are plans to make services necessary for almost any game server:
+- service for static storage
+- liveops service
+- authorization service
+- notification push service
+- chat service
+- in-app purchases service
+- leaderboards service
+- ads services
+
+The list is endless... Be in touch.
+
 # 🏗️ Contributing
 
 We invite you to contribute and help improve Shardy. Please see [contributing document](./CONTRIBUTING.md). 🤗

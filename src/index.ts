@@ -2,6 +2,7 @@ export { Bot } from './Bot';
 export { Client } from './Client';
 export { Commander, ResponseType, Task, DisconnectReason } from './Commander';
 export { Connection } from './Connection';
+export { Extension, ExtensionMode } from './Extension';
 export { Logger, LoggerScope, LoggerFilterMode, LoggerFilter, LoggerType } from './Logger';
 export { PayloadData } from './Payload';
 export { Serializer } from './Serializer';

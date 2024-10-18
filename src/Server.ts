@@ -9,11 +9,7 @@ import { TransportType } from './Transport';
 import { Connection } from './Connection';
 import { DisconnectReason } from './Commander';
 import http from 'http';
-
-/**
- * Tag for logs
- */
-const LOG_TAG = Tools.getTag(module);
+import { Extension, ExtensionMode } from './Extension';
 
 /**
  * Length for id
@@ -92,6 +88,22 @@ export class Server {
   private list: Map<string, Client> = new Map<string, Client>();
 
   /**
+   * Extensions array (before)
+   *
+   * @private
+   * @type {Array<Extension>}
+   */
+  private extensionsBefore: Array<Extension> = new Array<Extension>();
+
+  /**
+   * Extensions array (after)
+   *
+   * @private
+   * @type {Array<Extension>}
+   */
+  private extensionsAfter: Array<Extension> = new Array<Extension>();
+
+  /**
    * HTTP server for Websocket server
    *
    * @private
@@ -159,7 +171,29 @@ export class Server {
   }
 
   /**
-   * Set filter for all connected clients
+   * Use extension for service
+   *
+   * @param extension Extension instance
+   */
+  async use(extension: Extension): Promise<void> {
+    if (extension.mode === ExtensionMode.Before) {
+      const index = this.extensionsBefore.indexOf(extension, 0);
+      if (index < 0) {
+        await extension.init();
+        this.extensionsBefore.push(extension);
+      }
+    } else {
+      const index = this.extensionsAfter.indexOf(extension, 0);
+      if (index < 0) {
+        await extension.init();
+        this.extensionsAfter.push(extension);
+      }
+    }
+    this.log.info(`use extension ${extension.name}`, LoggerScope.System);
+  }
+
+  /**
+   * Set filter for all connected clients and extensions
    *
    * @param {LoggerFilter} filter Filter data
    */
@@ -168,15 +202,27 @@ export class Server {
     this.list.forEach((client: Client) => {
       client.log.setFilter(filter);
     });
+    this.extensionsBefore.forEach((extension: Extension) => {
+      extension.log.setFilter(filter);
+    });
+    this.extensionsAfter.forEach((extension: Extension) => {
+      extension.log.setFilter(filter);
+    });
   }
 
   /**
-   * Clear all log filters for all connected clients
+   * Clear all log filters for all connected clients and extensions
    */
   async clearFilter(): Promise<void> {
     this.log.clearFilter();
     this.list.forEach((client: Client) => {
       client.log.clearFilter();
+    });
+    this.extensionsBefore.forEach((extension: Extension) => {
+      extension.log.clearFilter();
+    });
+    this.extensionsAfter.forEach((extension: Extension) => {
+      extension.log.clearFilter();
     });
   }
 
@@ -194,10 +240,16 @@ export class Server {
     logger.setFilter(this.log.getFilter());
     const client = new Client(new Connection(socket, this.service.transport), id, logger, this.service, this.options);
     client.onDisconnect = (id: string, reason: DisconnectReason) => this.onDisconnect(id, reason);
-    client.onReady = () => this.service.onReady(client);
+    client.onReady = () => this.onReady(client);
     this.list.set(id, client);
+    this.extensionsBefore.forEach((item) => {
+      item.onClientConnect(client);
+    });
     this.service.onConnect(client);
-    this.log.info(`[${LOG_TAG}] connected ${id}|${ip}`, LoggerScope.Debug);
+    this.log.info(`connected ${id}|${ip}`, LoggerScope.Debug);
+    this.extensionsAfter.forEach((item) => {
+      item.onClientConnect(client);
+    });
   }
 
   /**
@@ -206,8 +258,14 @@ export class Server {
    * @private
    */
   private onListening(): void {
+    this.extensionsBefore.forEach((item) => {
+      item.onServiceListening();
+    });
     this.service.onListening(this.host, this.port);
     this.log.info(`listening on ${this.host}:${this.port}`, LoggerScope.System);
+    this.extensionsAfter.forEach((item) => {
+      item.onServiceListening();
+    });
   }
 
   /**
@@ -226,8 +284,30 @@ export class Server {
    * @private
    */
   private onClose(): void {
+    this.extensionsBefore.forEach((item) => {
+      item.onServiceClose();
+    });
     this.service.onClose();
     this.log.info(`closed`, LoggerScope.System);
+    this.extensionsAfter.forEach((item) => {
+      item.onServiceClose();
+    });
+  }
+
+  /**
+   * Event when client ready for work
+   *
+   * @private
+   * @param {Client} client Client instance
+   */
+  private onReady(client: Client): void {
+    this.extensionsBefore.forEach((item) => {
+      item.onClientReady(client);
+    });
+    this.service.onReady(client);
+    this.extensionsAfter.forEach((item) => {
+      item.onClientReady(client);
+    });
   }
 
   /**
@@ -239,10 +319,16 @@ export class Server {
    */
   private onDisconnect(id: string, reason: DisconnectReason): void {
     const client = this.list.get(id)!;
+    this.extensionsBefore.forEach((item) => {
+      item.onClientDisconnect(client, reason);
+    });
     this.service.onDisconnect(client, reason);
     client.destroy();
     this.list.delete(id);
-    this.log.info(`[${LOG_TAG}] disconnected ${id}`, LoggerScope.Debug);
+    this.log.info(`disconnected ${id}`, LoggerScope.Debug);
+    this.extensionsAfter.forEach((item) => {
+      item.onClientDisconnect(client, reason);
+    });
   }
 
   /**

@@ -2,15 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2024-10-20
+
+### Added
+- Extensions
+
+### Fixed
+- Logger empty tags checking
+
 ## [1.0.2] - 2024-10-10
 
 ### Added
-- File .npmignore added
+- File .npmignore
 
 ## [1.0.1] - 2024-10-10
 
 ### Changed
-- Repo link updated
+- Repo link
 
 ## [1.0.0] - 2024-10-10
 
