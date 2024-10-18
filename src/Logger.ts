@@ -139,8 +139,8 @@ export class Logger {
    * @return {*}  {string} Formatted label
    */
   private formatLabelTag(): string {
-    let label = '';
-    if (this.tags) {
+    let label = '-';
+    if (this.tags.length > 0) {
       label = this.tags[0];
       for (let i = 1; i < this.tags.length; i++) {
         label = label.concat(`|${this.tags[i]}`);
