@@ -11,3 +11,5 @@ export { Service, ServiceOptions } from './Service';
 export { TransportType } from './Transport';
 export { Tools } from './Tools';
 export { ValidatorState, Validator } from './Validator';
+export { DefaultSerializer } from './default/DefaultSerializer';
+export { DefaultValidator } from './default/DefaultValidator';

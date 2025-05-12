@@ -220,6 +220,9 @@ export class MyHandshake implements Validator {
 }
 ```
 
+> [!NOTE]
+> You can use the simple built-in `DefaultValidator` validator.
+
 ### Serialization
 
 Shardy supports custom serialization of transmitted data. You can use JSON, MessagePack, Protobuf, FlatBuffers, etc. or your own serializer.
@@ -241,6 +244,9 @@ export class MyJsonSerializer implements Serializer {
 
 }
 ```
+
+> [!NOTE]
+> You can use the simple built-in `DefaultSerializer` serializer.
 
 ### Extensions
 

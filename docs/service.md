@@ -100,7 +100,7 @@ export class MyValidator implements Validator {
 ```
 
 > [!IMPORTANT] 
-> If your implementation does not need to do a two-step handshake, you can set "stubs" on these methods.
+> If your implementation does not need to do a two-step handshake, you can set "stubs" on these methods or you can use the simple built-in `DefaultValidator` validator.
 
 # 🧱 Serializer
 
@@ -123,7 +123,7 @@ export class MySerializer implements Serializer {
 Here you can use any type of serialization you like: MessagePack, Protobuf, FlatBuffers, your own. If you are using Shardy with a Unity client, make sure your C# serializer packs data the same way it does on your backend.
 
 > [!IMPORTANT] 
-> Make sure your serialization is the same on the server and client
+> Make sure your serialization is the same on the server and client. Also, you can use the simple built-in `DefaultSerializer` serializer.
 
 # 🛠️ Load commands
 
