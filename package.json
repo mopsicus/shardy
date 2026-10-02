@@ -16,6 +16,9 @@
   ],
   "scripts": {
     "build-ts": "tsc",
+    "test": "npm run build-ts && node --test",
+    "bench:connection": "npm run build-ts && node benchmark/connection.mjs",
+    "bench:timers": "npm run build-ts && node benchmark/timers.mjs",
     "format": "prettier --config .prettierrc 'src/**/*.ts' --write",
     "build": "npm run build-ts && npm run lint",
     "lint": "tsc --noEmit && eslint \"**/*.{js,ts}\" --quiet --fix && npm run format"
