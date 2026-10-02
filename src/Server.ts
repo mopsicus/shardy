@@ -6,7 +6,7 @@ import { Tools } from './Tools';
 import { Service, ServiceOptions } from './Service';
 import { Client } from './Client';
 import { TransportType } from './Transport';
-import { Connection } from './Connection';
+import { Connection, DEFAULT_SEND_BYTES } from './Connection';
 import { DisconnectReason } from './Commander';
 import { Extension, ExtensionMode } from './Extension';
 import { Block, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
@@ -168,6 +168,10 @@ export class Server {
       this.log.error(`block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
     }
+    if (!Connection.validate(this.options.bytes ?? DEFAULT_SEND_BYTES)) {
+      this.log.error('max send bytes must be a positive safe integer', LoggerScope.System);
+      return;
+    }
     this.server.on(CONNECTION_EVENT, (socket: SocketType, message: IncomingMessage) => this.onConnect(socket, message));
     this.server.on(LISTENING_EVENT, () => this.onListening());
     this.server.on(ERROR_EVENT, (error: Error) => this.onError(error));
@@ -316,7 +320,13 @@ export class Server {
     const id = Tools.generateId(ID_LENGTH);
     const logger = new Logger([id, ip]);
     logger.setFilter(this.log.getFilter());
-    const client = new Client(new Connection(socket, this.service.transport), id, logger, this.service, this.options);
+    const client = new Client(
+      new Connection(socket, this.service.transport, this.options.bytes),
+      id,
+      logger,
+      this.service,
+      this.options,
+    );
     client.onDisconnect = (id: string, reason: DisconnectReason) => this.onDisconnect(id, reason);
     client.onReady = () => this.onReady(client);
     this.list.set(id, client);

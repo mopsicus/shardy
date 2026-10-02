@@ -7,7 +7,7 @@ import { TransportType } from './Transport';
 import { CommanderMode, DisconnectReason, ResponseType } from './Commander';
 import { PayloadData } from './Payload';
 import { Service, ServiceOptions } from './Service';
-import { Connection } from './Connection';
+import { Connection, DEFAULT_SEND_BYTES } from './Connection';
 import { Tools } from './Tools';
 import { Block, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from './Block';
 
@@ -87,6 +87,10 @@ export class Bot {
       this.log.error(`[${Tools.getTag(module)}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
     }
+    if (!Connection.validate(this.options.bytes ?? DEFAULT_SEND_BYTES)) {
+      this.log.error(`[${Tools.getTag(module)}] max send bytes must be a positive safe integer`, LoggerScope.System);
+      return;
+    }
   }
 
   /**
@@ -94,7 +98,7 @@ export class Bot {
    */
   async start(): Promise<void> {
     const socket = this.transport === TransportType.TCP ? net.connect(this.port, this.host, () => this.onClientConnect()) : new WebSocket(`ws://${this.host}:${this.port}`);
-    this.connection = new Connection(socket, this.transport);
+    this.connection = new Connection(socket, this.transport, this.options.bytes);
     this.connection.onConnect = () => this.onClientConnect();
   }
 

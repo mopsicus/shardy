@@ -28,6 +28,12 @@ export interface ServiceOptions {
    */
   pendings?: number;
 
+  /** 
+   * Maximum buffered outbound bytes per connection
+   * Defaults to 4 MiB
+   */
+  bytes?: number;
+
   /**
    * Handshake service instance
    */
