@@ -1,4 +1,4 @@
-import { Block, BlockData, BlockType } from './Block';
+import { Block, BlockData, BlockType, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
 import { DisconnectReason } from './Commander';
 import { Logger, LoggerScope } from './Logger';
 import { Tools } from './Tools';
@@ -76,8 +76,13 @@ export class Protocol {
   constructor(
     private connection: Connection,
     private log: Logger,
+    private block: number = DEFAULT_BLOCK_SIZE,
   ) {
-    this.transport = new Transport(this.connection, this.log);
+    this.transport = new Transport(this.connection, this.log, this.block);
+    if (!Block.validate(this.block ?? DEFAULT_BLOCK_SIZE)) {
+      this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
+      return;
+    }    
     this.transport.onData = (data: Buffer) => this.onData(data);
     this.transport.onDisconnect = () => this.onClose();
   }
@@ -94,8 +99,16 @@ export class Protocol {
       return;
     }
     body = body ? body : Buffer.alloc(0);
+    if (body.length > this.block) {
+      this.log.error(`[${LOG_TAG}] block body exceeds the configured limit of ${this.block} bytes`, LoggerScope.Debug);
+      return;      
+    }
     this.log.info(`[${LOG_TAG}] dispatch type: ${type}, body: ${body}`, LoggerScope.Debug);
     const data = Block.encode(type, body);
+    if (data.length === 0) {
+      this.log.error(`[${LOG_TAG}] block body exceeds the maximum of ${MAX_BLOCK_SIZE} bytes`, LoggerScope.Debug);
+      return;
+    }
     this.transport.dispatch(data);
   }
 

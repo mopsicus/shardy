@@ -10,11 +10,17 @@ import { Connection } from './Connection';
 import { DisconnectReason } from './Commander';
 import http from 'http';
 import { Extension, ExtensionMode } from './Extension';
+import { Block, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
 
 /**
  * Length for id
  */
 const ID_LENGTH = 10;
+
+/**
+ * Default maximum pending handshakes
+ */
+const MAX_PENDINGS = 64;
 
 /**
  * Event for new connection
@@ -88,6 +94,22 @@ export class Server {
   private list: Map<string, Client> = new Map<string, Client>();
 
   /**
+   * Pending handshakes set
+   *
+   * @private
+   * @type {Set<string>}
+   */
+  private pendings: Set<string> = new Set<string>();
+
+  /**
+   * Maximum number of pending handshakes
+   *
+   * @private
+   * @type {number}
+   */
+  private limit: number;
+
+  /**
    * Extensions array (before)
    *
    * @private
@@ -125,9 +147,14 @@ export class Server {
     private service: Service,
     private options: ServiceOptions,
   ) {
+    this.limit = this.options.pendings ?? MAX_PENDINGS;
     this.catchExceptions();
     this.http = http.createServer();
     this.server = this.service.transport === TransportType.TCP ? new SocketServer() : new WebSocketServer({ server: this.http });
+    if (!Block.validate(this.options.block ?? DEFAULT_BLOCK_SIZE)) {
+      this.log.error(`${this.service.name} block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
+      return;
+    }    
     this.server.on(CONNECTION_EVENT, (socket: SocketType, message: IncomingMessage) => this.onConnect(socket, message));
     this.server.on(LISTENING_EVENT, () => this.onListening());
     this.server.on(ERROR_EVENT, (error: Error) => this.onError(error));
@@ -158,6 +185,7 @@ export class Server {
     this.list.forEach((client: Client) => {
       client.kick(DisconnectReason.ServerDown);
     });
+    this.pendings.clear();
     this.list.clear();
     switch (this.service.transport) {
       case TransportType.TCP:
@@ -234,6 +262,15 @@ export class Server {
    * @param {IncomingMessage} message Incoming message for websockets
    */
   private onConnect(socket: SocketType, message: IncomingMessage): void {
+    if (this.pendings.size >= this.limit) {
+      this.log.warn(`pendings limit reached: ${this.limit}`, LoggerScope.System);
+      if (this.service.transport === TransportType.TCP) {
+        (socket as Socket).destroy();
+      } else {
+        (socket as WebSocket).terminate();
+      }
+      return;
+    }
     const ip = message ? message.socket.remoteAddress! : (socket as Socket).remoteAddress!;
     const id = Tools.generateId(ID_LENGTH);
     const logger = new Logger([id, ip]);
@@ -242,6 +279,7 @@ export class Server {
     client.onDisconnect = (id: string, reason: DisconnectReason) => this.onDisconnect(id, reason);
     client.onReady = () => this.onReady(client);
     this.list.set(id, client);
+    this.pendings.add(id);
     this.extensionsBefore.forEach((item) => {
       item.onClientConnect(client);
     });
@@ -301,6 +339,7 @@ export class Server {
    * @param {Client} client Client instance
    */
   private onReady(client: Client): void {
+    this.pendings.delete(client.id);
     this.extensionsBefore.forEach((item) => {
       item.onClientReady(client);
     });
@@ -318,6 +357,7 @@ export class Server {
    * @param {DisconnectReason} reason Reason for disconnect
    */
   private onDisconnect(id: string, reason: DisconnectReason): void {
+    this.pendings.delete(id);
     const client = this.list.get(id)!;
     this.extensionsBefore.forEach((item) => {
       item.onClientDisconnect(client, reason);
@@ -346,5 +386,5 @@ export class Server {
   private catchExceptions(): void {
     process.on(UNCAUGHT_EXCEPTIONS, this.onException);
     process.on(UNHANDLED_REJECTION, this.onException);
-  }
+  }  
 }

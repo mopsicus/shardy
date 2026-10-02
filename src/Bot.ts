@@ -1,7 +1,7 @@
 import ip from 'ip';
 import net from 'net';
 import { WebSocket } from 'ws';
-import { Logger } from './Logger';
+import { Logger, LoggerScope } from './Logger';
 import { Client } from './Client';
 import { TransportType } from './Transport';
 import { CommanderMode, DisconnectReason, ResponseType } from './Commander';
@@ -9,6 +9,7 @@ import { PayloadData } from './Payload';
 import { Service, ServiceOptions } from './Service';
 import { Connection } from './Connection';
 import { Tools } from './Tools';
+import { Block, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from './Block';
 
 /**
  * Length for id
@@ -22,6 +23,7 @@ const ID_LENGTH = 10;
  * @class Bot
  */
 export class Bot {
+  
   /**
    * Callback on disconnect
    */
@@ -81,7 +83,12 @@ export class Bot {
     private transport: TransportType,
     private options: ServiceOptions,
     private handshakeBody?: Buffer,
-  ) {}
+  ) {
+    if (!Block.validate(this.options.block ?? DEFAULT_BLOCK_SIZE)) {
+      this.log.error(`[${Tools.getTag(module)}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
+      return;
+    }        
+  }
 
   /**
    * Start bot, begin connect

@@ -196,7 +196,7 @@ export class Commander {
     private mode: CommanderMode = CommanderMode.Service,
   ) {
     this.cid = this.id;
-    this.protocol = new Protocol(this.connection, this.log);
+    this.protocol = new Protocol(this.connection, this.log, this.options.block);
     this.protocol.onBlock = (block: BlockData) => this.onBlock(block);
     this.protocol.onDisconnect = () => this.onClose();
     this.pulse = new Pulse(mode);

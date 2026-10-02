@@ -1,4 +1,4 @@
-import { Block, BLOCK_HEAD } from './Block';
+import { Block, BLOCK_HEAD, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from './Block';
 import { Logger, LoggerScope } from './Logger';
 import { Tools } from './Tools';
 import { Connection } from './Connection';
@@ -99,6 +99,11 @@ export class Transport {
   private package: TransportData;
 
   /**
+   * Flag to indicate if the transport has been disconnected
+   */
+  private disconnected: boolean = false;
+
+  /**
    * Creates an instance of Transport
    *
    * @param {Connection} connection Connection for transport data
@@ -107,10 +112,15 @@ export class Transport {
   constructor(
     private connection: Connection,
     private log: Logger,
+    private block: number = DEFAULT_BLOCK_SIZE,
   ) {
     this.state = TransportState.Head;
     this.head = { buffer: Buffer.alloc(BLOCK_HEAD), offset: 0, size: BLOCK_HEAD };
     this.package = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
+    if (!Block.validate(this.block ?? DEFAULT_BLOCK_SIZE)) {
+      this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
+      return;
+    }     
     this.connection.onData = (data: Buffer) => this.processData(data);
     this.connection.onClose = () => this.onClose();
     this.connection.onError = (error: Error) => this.onError(error);
@@ -122,16 +132,19 @@ export class Transport {
   onError(error: Error): void {
     this.log.error(`[${LOG_TAG}] error: ${error.message}`, LoggerScope.Debug);
     this.close();
-    this.onDisconnect();
+    this.processDisconnect();
   }
 
   /**
    * Event on connection close
    */
   onClose(): void {
+    if (this.disconnected) {
+      return;
+    }
     this.log.info(`[${LOG_TAG}] close`, LoggerScope.Debug);
     this.close();
-    this.onDisconnect();
+    this.processDisconnect();
   }
 
   /**
@@ -175,9 +188,12 @@ export class Transport {
     this.head.offset += length;
     if (this.head.offset >= this.head.size) {
       const size = this.getPackageSize(this.head.buffer);
-      if (size < 0) {
-        this.log.warn(`[${LOG_TAG}] invalid package size: ${size}`, LoggerScope.Debug);
-        result = 0;
+      if (size > this.block) {
+        this.log.warn(`[${LOG_TAG}] package size exceeds limit: ${size}`, LoggerScope.Debug);
+        this.state = TransportState.Closed;
+        this.connection.destroy();
+        this.processDisconnect();
+        return buffer.length;
       }
       if (Block.check(this.head.buffer[0])) {
         this.package.size = size + this.head.size;
@@ -185,6 +201,11 @@ export class Transport {
         this.head.buffer.copy(this.package.buffer, 0, 0, this.head.size);
         this.package.offset = this.head.size;
         this.state = TransportState.Body;
+        if (size === 0) {
+          const packageBuffer = this.package.buffer;
+          this.reset();
+          this.onData(packageBuffer);
+        }
       } else {
         result = buffer.length;
         this.log.warn(`[${LOG_TAG}] invalid block type: ${this.head.buffer[0]}`, LoggerScope.Debug);
@@ -221,6 +242,16 @@ export class Transport {
     this.package = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
     if (this.state !== TransportState.Closed) {
       this.state = TransportState.Head;
+    }
+  }
+
+  /**
+   * Notify transport disconnection
+   */
+  processDisconnect(): void {
+    if (!this.disconnected) {
+      this.disconnected = true;
+      this.onDisconnect();
     }
   }
 

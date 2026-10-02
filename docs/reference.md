@@ -89,6 +89,14 @@ static decode(data: Buffer): BlockData;
  */
 static check(type: BlockType): boolean;  
 
+/**
+ * Validate block body limit
+ * 
+ * @param size Size of the block body to validate
+ * @returns {boolean} True if the size is valid, false otherwise
+ */
+static validate(size: number): boolean;
+
 ```
 
 # 🤖 Bot
@@ -901,9 +909,21 @@ Before you can run your service or connect to any Shardy-service via [`Bot`](#-b
  */
 export interface ServiceOptions {
   /**
-   * List of available service commads and requests
+   * List of available service commands and requests
    */
   commands?: Map<string, Task>;
+
+  /** 
+   * Maximum block body size in bytes
+   * Defaults to 1 MiB
+   */
+  block?: number;
+
+  /** 
+   * Maximum simultaneous connections that have not completed handshake
+   * Defaults to 64
+   */
+  pendings?: number;
 
   /**
    * Handshake service instance

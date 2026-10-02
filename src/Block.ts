@@ -3,6 +3,16 @@
  */
 export const BLOCK_HEAD = 4;
 
+/** 
+ * Maximum body size representable by the three-byte block length
+ */
+export const MAX_BLOCK_SIZE = 0xffffff;
+
+/** 
+ * Default body size limit for incoming and outgoing blocks. 
+ */
+export const DEFAULT_BLOCK_SIZE = 1024 * 1024;
+
 /**
  * Block result structure after decode
  */
@@ -56,8 +66,11 @@ export class Block {
    * @return {*}  {Buffer} Encoded type + body
    */
   static encode(type: BlockType, body: Buffer): Buffer {
-    const data = Buffer.from(body);
     const length = body ? body.length : 0;
+    if (length > MAX_BLOCK_SIZE) {
+      return Buffer.alloc(0);
+    }
+    const data = Buffer.from(body);
     const buffer = Buffer.alloc(BLOCK_HEAD + length);
     let index = 0;
     buffer[index++] = type & 0xff;
@@ -93,4 +106,16 @@ export class Block {
   static check(type: BlockType): boolean {
     return Object.values(BlockType).includes(type);
   }
+
+  /**
+   * Validate block body limit
+   * 
+   * @param size Size of the block body to validate
+   * @returns {boolean} True if the size is valid, false otherwise
+   */
+  static validate(size: number): boolean {
+    return Number.isInteger(size) && size >= 0 && size <= MAX_BLOCK_SIZE;
+  }  
 }
+
+
