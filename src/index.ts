@@ -1,10 +1,11 @@
 export { Bot } from './Bot';
+export { Block, BlockType, BlockData, BLOCK_HEAD, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from './Block';
 export { Client } from './Client';
 export { Commander, ResponseType, Task, DisconnectReason } from './Commander';
 export { Connection } from './Connection';
 export { Extension, ExtensionMode } from './Extension';
 export { Logger, LoggerScope, LoggerFilterMode, LoggerFilter, LoggerType } from './Logger';
-export { PayloadData } from './Payload';
+export { PayloadData, PayloadType } from './Payload';
 export { Serializer } from './Serializer';
 export { Server } from './Server';
 export { Service, ServiceOptions } from './Service';

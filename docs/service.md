@@ -137,15 +137,19 @@ I prefer to separate each command by file, I think it's a good practice, and tha
 
 ```ts
 const root = `./src/commands`;
-Tools.walk(root).forEach(async (file) => {
-  const name = path.basename(file, '.ts');
-  const dir = path.parse(file).dir.split(path.sep).slice(1).join(path.sep);
-  const task = await import(`./${path.join(dir, name)}`);
-  commands.set(name, task[name]);
-});
+const loadCommands = async (): Promise<Map<string, Task>> => {
+  const commands = new Map<string, Task>();
+  for (const file of Tools.walk(root)) {
+    const name = path.basename(file, '.ts');
+    const dir = path.parse(file).dir.split(path.sep).slice(1).join(path.sep);
+    const task = await import(`./${path.join(dir, name)}`);
+    commands.set(name, task[name]);
+  }
+  return commands;
+};
 ```
 
-`Tools.walk` is a built-in function to find all files in directory (recursive). In the above example, the script finds all the commands in the directory and imports them into the `commands` map. After that, you have to pass commands to service on initialization state.
+`Tools.walk` is a built-in function to find all files in directory (recursive). In the above example, the script imports each command before returning the populated `commands` map. Await `loadCommands()` before starting the server.
 
 Another way is to import the commands, fill the map manually and pass to the service:
 

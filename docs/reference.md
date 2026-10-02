@@ -7,11 +7,11 @@ Block is composed of two parts: **header** and **body**. The header part describ
 ### Structure
 
 *type* – block type, 1 byte
-- 0x01: handshake – handshake request from client to server and handshake response
-- 0x02: handshake acknowledgement – handshake acknowledgement on request
-- 0x03: heartbeat – empty block for check connection heartbeat
-- 0x04: data – block with some data
-- 0x05: kick – disconnect signal
+- 0x00: handshake – handshake request from client to server and handshake response
+- 0x01: handshake acknowledgement – handshake acknowledgement on request
+- 0x02: heartbeat – empty block for check connection heartbeat
+- 0x03: data – block with some data
+- 0x04: kick – disconnect signal
   
 *length* – length of body, 3 bytes big-endian integer
 
@@ -35,27 +35,27 @@ export enum BlockType {
   /**
    * Handshake process
    */
-  Handshake,
+  Handshake = 0x00,
 
   /**
    * Acknowledgement for success verify
    */
-  HandshakeAcknowledgement,
+  HandshakeAcknowledgement = 0x01,
 
   /**
    * Ping
    */
-  Heartbeat,
+  Heartbeat = 0x02,
 
   /**
    * Data for command, request, response
    */
-  Data,
+  Data = 0x03,
 
   /**
    * Kick from server, disconnect
    */
-  Kick,
+  Kick = 0x04,
 }
 ```
 

@@ -28,27 +28,27 @@ export enum BlockType {
   /**
    * Handshake process
    */
-  Handshake,
+  Handshake = 0x00,
 
   /**
    * Acknowledgement for success verify
    */
-  HandshakeAcknowledgement,
+  HandshakeAcknowledgement = 0x01,
 
   /**
    * Ping
    */
-  Heartbeat,
+  Heartbeat = 0x02,
 
   /**
    * Data for command, request, response
    */
-  Data,
+  Data = 0x03,
 
   /**
    * Kick from server, disconnect
    */
-  Kick,
+  Kick = 0x04,
 }
 
 /**
