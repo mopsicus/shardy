@@ -26,12 +26,12 @@ const TIMEOUT_ERROR = 'timeout';
 /**
  * Type for loaded commands and requests
  */
-export type Task = (commander: Commander, payload: PayloadData, service: Service) => void;
+export type Task = (commander: Commander, payload: PayloadData, service: Service) => void | Promise<void>;
 
 /**
  * Type for requests callbacks
  */
-export type ResponseType = (data: PayloadData) => void;
+export type ResponseType = (data: PayloadData) => void | Promise<void>;
 
 /**
  * Mode for commander
@@ -133,6 +133,13 @@ export class Commander {
   private callbacks: Map<number, ResponseType> = new Map<number, ResponseType>();
 
   /**
+   * List of reject callbacks for requests
+   *
+   * @type {Map<number, (error: Error) => void>}
+   */
+  private rejects: Map<number, (error: Error) => void> = new Map<number, (error: Error) => void>();
+
+  /**
    * List of callbacks for requests for bot
    *
    * @type {Map<string, ResponseType>}
@@ -176,6 +183,14 @@ export class Commander {
    * @type {DisconnectReason}
    */
   private reason: DisconnectReason = DisconnectReason.Normal;
+
+  /**
+   * Indicates whether the commander is closed
+   *
+   * @private
+   * @type {boolean}
+   */
+  private closed: boolean = false;
 
   /**
    * Creates an instance of Commander
@@ -270,14 +285,22 @@ export class Commander {
    * @param {Buffer} [data] Payload data
    */
   fetch(request: string, data?: Buffer): Promise<PayloadData> {
-    this.log.info(`-> fetch: ${this.counter}.${request}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, this.counter, data);
-    this.protocol.send(payload);
-    const callback = new Promise<PayloadData>((resolve) => this.callbacks.set(this.counter, resolve));
-    this.names.set(this.counter, request);
-    this.timeouts.set(this.counter, Date.now());
-    this.counter++;
-    return callback;
+    const id = this.counter++;
+    this.log.info(`-> fetch: ${id}.${request}, data: ${data}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, id, data);
+    const promise = new Promise<PayloadData>((resolve, reject) => {
+      this.callbacks.set(id, resolve);
+      this.rejects.set(id, reject);
+      this.names.set(id, request);
+      this.timeouts.set(id, Date.now());
+    });
+    try {
+      this.protocol.send(payload);
+    } catch (error) {
+      this.cancelRequest(id);
+      return Promise.reject(error);
+    }
+    return promise;
   }
 
   /**
@@ -288,13 +311,19 @@ export class Commander {
    * @param {Buffer} [data] Payload data
    */
   request(request: string, callback: ResponseType, data?: Buffer): number {
-    this.log.info(`-> request: ${this.counter}.${request}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, this.counter, data);
-    this.protocol.send(payload);
-    this.callbacks.set(this.counter, callback);
-    this.names.set(this.counter, request);
-    this.timeouts.set(this.counter, Date.now());
-    return this.counter++;
+    const id = this.counter++;
+    this.log.info(`-> request: ${id}.${request}, data: ${data}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, id, data);
+    this.callbacks.set(id, callback);
+    this.names.set(id, request);
+    this.timeouts.set(id, Date.now());
+    try {
+      this.protocol.send(payload);
+    } catch (error) {
+      this.removeRequest(id);
+      throw error;
+    }
+    return id;
   }
 
   /**
@@ -326,13 +355,78 @@ export class Commander {
    * Clear all events
    */
   clear(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
     clearInterval(this.timer);
     this.pulse.clear();
+    const pending = Array.from(this.callbacks.entries());
+    const rejects = new Map(this.rejects);
+    const names = new Map(this.names);
     this.names.clear();
     this.timeouts.clear();
     this.commands.clear();
     this.requests.clear();
     this.callbacks.clear();
+    this.rejects.clear();
+    for (const [id, callback] of pending) {
+      const reject = rejects.get(id);
+      if (reject) {
+        reject(new Error('closed'));
+      } else {
+        try {
+          callback(Payload.create(PayloadType.Response, names.get(id) ?? '', id, undefined, 'closed'));
+        } catch (error) {
+          this.log.error(`[${LOG_TAG}] request callback failed: ${error}`, LoggerScope.Debug);
+        }
+      }
+    }
+  }
+
+  /**
+   * Invoke a task with the given payload
+   *
+   * @param {Task} task Task to invoke
+   * @param {PayloadData} payload Payload data for the task
+   */
+  processTask(task: Task, payload: PayloadData): void {
+    try {
+      const result = task(this, payload, this.service);
+      if (result) {
+        void result.catch((error) => this.handleError(payload, error));
+      }
+    } catch (error) {
+      this.handleError(payload, error);
+    }
+  }
+
+  /**
+   * Invoke a response callback with the given payload
+   *
+   * @param {ResponseType} callback Response callback to invoke
+   * @param {PayloadData} payload Payload data for the response
+   * @param {(error: unknown) => void} [onError] Optional error handler
+   */
+  processResponse(callback: ResponseType, payload: PayloadData, onError?: (error: unknown) => void): void {
+    try {
+      const result = callback(payload);
+      if (result) {
+        void result.catch((error) => {
+          if (onError) {
+            onError(error);
+          } else {
+            this.log.error(`[${LOG_TAG}] response callback failed: ${error}`, LoggerScope.Debug);
+          }
+        });
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error);
+      } else {
+        this.log.error(`[${LOG_TAG}] response callback failed: ${error}`, LoggerScope.Debug);
+      }
+    }
   }
 
   /**
@@ -341,9 +435,38 @@ export class Commander {
    * @param {number} id Request id
    */
   cancelRequest(id: number): void {
+    const reject = this.rejects.get(id);
+    this.removeRequest(id);
+    reject?.(new Error('cancelled'));
+  }
+
+  /**
+   * Remove request by ID
+   *
+   * @param {number} id Request ID
+   */
+  removeRequest(id: number): void {
     this.names.delete(id);
-    this.callbacks.delete(id);
     this.timeouts.delete(id);
+    this.callbacks.delete(id);
+    this.rejects.delete(id);
+  }
+
+  /**
+   * Handle error for a given payload
+   *
+   * @param {PayloadData} payload Payload data associated with the error
+   * @param {unknown} error The error to handle
+   */
+  handleError(payload: PayloadData, error: unknown): void {
+    this.log.info(`[${LOG_TAG}] handle error: ${error}`, LoggerScope.Debug);
+    if (payload.type === PayloadType.Request) {
+      try {
+        this.error(payload, error instanceof Error ? error.message : String(error));
+      } catch (inner) {
+        this.log.error(`[${LOG_TAG}] failed to handle error: ${inner}`, LoggerScope.Debug);
+      }
+    }
   }
 
   /**
@@ -443,11 +566,19 @@ export class Commander {
         this.onAcknowledgement(block);
         break;
       case BlockType.Data:
-        const payload = Payload.decode(this.options.serializer, block.body);
-        if (Payload.check(payload)) {
+        try {
+          const payload: unknown = Payload.decode(this.options.serializer, block.body);
+          if (!Payload.check(payload)) {
+            this.log.warn(`[${LOG_TAG}] invalid payload`, LoggerScope.Debug);
+            this.reason = DisconnectReason.Unknown;
+            this.disconnect();
+            return;
+          }
           this.onPayload(payload);
-        } else {
-          this.log.warn(`[${LOG_TAG}] invalid payload: ${payload}`, LoggerScope.Debug);
+        } catch (error) {
+          this.log.error(`[${LOG_TAG}] payload decode failed: ${error}`, LoggerScope.Debug);
+          this.reason = DisconnectReason.Unknown;
+          this.disconnect();
         }
         break;
       default:
@@ -471,9 +602,9 @@ export class Commander {
       case PayloadType.Command:
         this.log.info(`<- command: ${payload.name}, data: ${payload.data}`, LoggerScope.Debug);
         if (this.mode === CommanderMode.Service) {
-          const command = this.options.commands!.get(payload.name);
+          const command = this.options.commands?.get(payload.name);
           if (command) {
-            command(this, payload, this.service);
+            this.processTask(command, payload);
           } else {
             this.log.warn(`[${LOG_TAG}] unknown command: ${payload.name}`, LoggerScope.Debug);
           }
@@ -481,7 +612,7 @@ export class Commander {
           const list = this.commands.get(payload.name);
           if (list) {
             for (const callback of list) {
-              callback(payload);
+              this.processResponse(callback, payload);
             }
           }
         }
@@ -489,16 +620,20 @@ export class Commander {
       case PayloadType.Request:
         this.log.info(`<- request: ${payload.id}.${payload.name}, data: ${payload.data}`, LoggerScope.Debug);
         if (this.mode === CommanderMode.Service) {
-          const request = this.options.commands!.get(payload.name);
+          const request = this.options.commands?.get(payload.name);
           if (request) {
-            request(this, payload, this.service);
+            this.processTask(request, payload);
           } else {
             this.log.warn(`[${LOG_TAG}] unknown request: ${payload.id}.${payload.name}`, LoggerScope.Debug);
+            this.error(payload, 'unknown request');
           }
         } else {
           const callback = this.requests.get(payload.name);
           if (callback) {
-            callback(payload);
+            this.processResponse(callback, payload, (error) => this.handleError(payload, error));
+          } else {
+            this.log.warn(`[${LOG_TAG}] unknown request: ${payload.id}.${payload.name}`, LoggerScope.Debug);
+            this.error(payload, 'unknown request');
           }
         }
         break;
@@ -510,8 +645,8 @@ export class Commander {
         }
         const callback = this.callbacks.get(payload.id);
         if (callback) {
-          callback(payload);
-          this.cancelRequest(payload.id);
+          this.removeRequest(payload.id);
+          this.processResponse(callback, payload);
         } else {
           this.log.warn(`[${LOG_TAG}] unknown response: ${payload.id}.${payload.name}`, LoggerScope.Debug);
         }
@@ -525,6 +660,9 @@ export class Commander {
    * Event from protocol when connection closed
    */
   onClose(): void {
+    if (this.closed) {
+      return;
+    }
     this.log.info(`<- disconnect`, LoggerScope.Debug);
     this.clear();
     this.onDisconnect(this.reason);
@@ -538,13 +676,17 @@ export class Commander {
   onHandshake(block: BlockData): void {
     this.log.info(`<- handshake`, LoggerScope.Debug);
     this.pulse.reset();
-    const state = this.options.validator.verifyHandshake(block.body);
-    this.log.info(`[${LOG_TAG}] handshake validation state: ${state}, data: ${block.body}`, LoggerScope.Debug);
-    if (state === ValidatorState.Success) {
-      this.acknowledge(this.options.validator.acknowledgement(block.body));
-    } else {
-      this.kick(DisconnectReason.Handshake);
+    try {
+      const state = this.options.validator.verifyHandshake(block.body);
+      this.log.info(`[${LOG_TAG}] handshake validation state: ${state}, data: ${block.body}`, LoggerScope.Debug);
+      if (state === ValidatorState.Success) {
+        this.acknowledge(this.options.validator.acknowledgement(block.body));
+        return;
+      }
+    } catch (error) {
+      this.log.error(`[${LOG_TAG}] handshake validation failed: ${error}`, LoggerScope.Debug);
     }
+    this.kick(DisconnectReason.Handshake);
   }
 
   /**
@@ -555,18 +697,22 @@ export class Commander {
   onAcknowledgement(block: BlockData): void {
     this.log.info(`<- acknowledge`, LoggerScope.Debug);
     this.pulse.reset();
-    if (this.mode === CommanderMode.Bot) {
+    try {
       const state = this.options.validator.verifyAcknowledgement(block.body);
       this.log.info(`[${LOG_TAG}] acknowledgement data: ${block.body}, validation state: ${state}`, LoggerScope.Debug);
-      if (state === ValidatorState.Success) {
-        this.acknowledge(this.options.validator.acknowledgement(block.body));
-      } else {
+      if (state !== ValidatorState.Success) {
         this.reason = DisconnectReason.Handshake;
         this.disconnect();
         return;
       }
-    } else {
-      this.log.info(`[${LOG_TAG}] acknowledgement data: ${block.body}`, LoggerScope.Debug);
+      if (this.mode === CommanderMode.Bot) {
+        this.acknowledge(this.options.validator.acknowledgement(block.body));
+      }
+    } catch (error) {
+      this.log.error(`[${LOG_TAG}] acknowledgement validation failed: ${error}`, LoggerScope.Debug);
+      this.reason = DisconnectReason.Handshake;
+      this.disconnect();
+      return;
     }
     this.log.info(`ready to work`, LoggerScope.Debug);
     this.onReady();
@@ -611,8 +757,12 @@ export class Commander {
    * Destroy
    */
   destroy(): void {
+    const closing = !this.closed;
     this.log.info(`[${LOG_TAG}] destroy`, LoggerScope.Debug);
     this.clear();
     this.protocol.destroy();
+    if (closing) {
+      this.onDisconnect(this.reason);
+    }
   }
 }

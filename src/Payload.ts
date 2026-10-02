@@ -105,7 +105,19 @@ export class Payload {
    * @param {PayloadData} payload Payload data to check
    * @return {*}  {boolean} Correct or not
    */
-  static check(payload: PayloadData): boolean {
-    return Object.values(PayloadType).includes(payload.type);
+  static check(payload: unknown): payload is PayloadData {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      return false;
+    }
+    const data = payload as Record<string, unknown>;
+    return (
+      (data.type === PayloadType.Request || data.type === PayloadType.Command || data.type === PayloadType.Response) &&
+      typeof data.name === 'string' &&
+      data.name.length > 0 &&
+      Number.isSafeInteger(data.id) &&
+      (data.id as number) >= 0 &&
+      Buffer.isBuffer(data.data) &&
+      typeof data.error === 'string'
+    );
   }
 }

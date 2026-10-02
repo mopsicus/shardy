@@ -82,7 +82,7 @@ export class Protocol {
     if (!Block.validate(this.block ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
-    }    
+    }
     this.transport.onData = (data: Buffer) => this.onData(data);
     this.transport.onDisconnect = () => this.onClose();
   }
@@ -101,7 +101,7 @@ export class Protocol {
     body = body ? body : Buffer.alloc(0);
     if (body.length > this.block) {
       this.log.error(`[${LOG_TAG}] block body exceeds the configured limit of ${this.block} bytes`, LoggerScope.Debug);
-      return;      
+      return;
     }
     this.log.info(`[${LOG_TAG}] dispatch type: ${type}, body: ${body}`, LoggerScope.Debug);
     const data = Block.encode(type, body);

@@ -76,9 +76,21 @@ export class DefaultValidator implements Validator {
    * @return {*}  {ValidatorState} Validation result
    */
   verifyHandshake(body: Buffer): ValidatorState {
-    const json = JSON.parse(body.toString('utf-8')) as HandshakeDTO;
-    if (json.version === 1 && json.nonce && typeof json.timestamp === 'number') {
-      return ValidatorState.Success;
+    try {
+      const json: unknown = JSON.parse(body.toString('utf-8'));
+      if (
+        typeof json === 'object' &&
+        json !== null &&
+        !Array.isArray(json) &&
+        (json as HandshakeDTO).version === 1 &&
+        typeof (json as HandshakeDTO).nonce === 'string' &&
+        (json as HandshakeDTO).nonce.length > 0 &&
+        Number.isFinite((json as HandshakeDTO).timestamp)
+      ) {
+        return ValidatorState.Success;
+      }
+    } catch {
+      return ValidatorState.Failed;
     }
     return ValidatorState.Failed;
   }
@@ -90,9 +102,20 @@ export class DefaultValidator implements Validator {
    * @return {*}  {ValidatorState} Validation result
    */
   verifyAcknowledgement(body: Buffer): ValidatorState {
-    const json = JSON.parse(body.toString('utf-8')) as AcknowledgementDTO;
-    if (json.received && json.nonce) {
-      return ValidatorState.Success;
+    try {
+      const json: unknown = JSON.parse(body.toString('utf-8'));
+      if (
+        typeof json === 'object' &&
+        json !== null &&
+        !Array.isArray(json) &&
+        (json as AcknowledgementDTO).received === true &&
+        typeof (json as AcknowledgementDTO).nonce === 'string' &&
+        (json as AcknowledgementDTO).nonce.length > 0
+      ) {
+        return ValidatorState.Success;
+      }
+    } catch {
+      return ValidatorState.Failed;
     }
     return ValidatorState.Failed;
   }

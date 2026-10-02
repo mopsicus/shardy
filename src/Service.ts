@@ -16,13 +16,13 @@ export interface ServiceOptions {
    */
   commands?: Map<string, Task>;
 
-  /** 
+  /**
    * Maximum block body size in bytes
    * Defaults to 1 MiB
    */
   block?: number;
 
-  /** 
+  /**
    * Maximum simultaneous connections that have not completed handshake
    * Defaults to 64
    */

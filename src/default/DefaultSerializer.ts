@@ -30,7 +30,21 @@ export class DefaultSerializer implements Serializer {
    */
   decode(body: Buffer): PayloadData {
     const json = body.toString('utf-8');
-    const data = Object.fromEntries(Object.entries(JSON.parse(json)).map(([key, value]) => [key, key === 'data' ? Buffer.from(String(value), 'base64') : value]));
+    const parsed: unknown = JSON.parse(json);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new TypeError(`payload must be a JSON object`);
+    }
+    const data = Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).map(([key, value]) => {
+        if (key !== 'data') {
+          return [key, value];
+        }
+        if (typeof value !== 'string') {
+          throw new TypeError(`payload data must be a base64 string`);
+        }
+        return [key, Buffer.from(value, 'base64')];
+      }),
+    );
     return data as unknown as PayloadData;
   }
 }

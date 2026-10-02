@@ -3,13 +3,13 @@
  */
 export const BLOCK_HEAD = 4;
 
-/** 
+/**
  * Maximum body size representable by the three-byte block length
  */
 export const MAX_BLOCK_SIZE = 0xffffff;
 
-/** 
- * Default body size limit for incoming and outgoing blocks. 
+/**
+ * Default body size limit for incoming and outgoing blocks.
  */
 export const DEFAULT_BLOCK_SIZE = 1024 * 1024;
 
@@ -109,13 +109,11 @@ export class Block {
 
   /**
    * Validate block body limit
-   * 
+   *
    * @param size Size of the block body to validate
    * @returns {boolean} True if the size is valid, false otherwise
    */
   static validate(size: number): boolean {
     return Number.isInteger(size) && size >= 0 && size <= MAX_BLOCK_SIZE;
-  }  
+  }
 }
-
-

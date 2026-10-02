@@ -120,7 +120,7 @@ export class Transport {
     if (!Block.validate(this.block ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
-    }     
+    }
     this.connection.onData = (data: Buffer) => this.processData(data);
     this.connection.onClose = () => this.onClose();
     this.connection.onError = (error: Error) => this.onError(error);

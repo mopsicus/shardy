@@ -8,9 +8,10 @@ import { Client } from './Client';
 import { TransportType } from './Transport';
 import { Connection } from './Connection';
 import { DisconnectReason } from './Commander';
-import http from 'http';
 import { Extension, ExtensionMode } from './Extension';
 import { Block, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
+import http from 'http';
+import { once } from 'events';
 
 /**
  * Length for id
@@ -41,16 +42,6 @@ const ERROR_EVENT = 'error';
  * Event when server close
  */
 const CLOSE_EVENT = 'close';
-
-/**
- * Event when app get uncaught expeption
- */
-const UNCAUGHT_EXCEPTIONS = 'uncaughtException';
-
-/**
- * Event when app get unhandled rejection
- */
-const UNHANDLED_REJECTION = 'unhandledRejection';
 
 /**
  * Socket type
@@ -88,7 +79,6 @@ export class Server {
   /**
    * List of connected
    *
-   * @private
    * @type {Map<string, Client>}
    */
   private list: Map<string, Client> = new Map<string, Client>();
@@ -96,7 +86,6 @@ export class Server {
   /**
    * Pending handshakes set
    *
-   * @private
    * @type {Set<string>}
    */
   private pendings: Set<string> = new Set<string>();
@@ -104,15 +93,41 @@ export class Server {
   /**
    * Maximum number of pending handshakes
    *
-   * @private
    * @type {number}
    */
   private limit: number;
 
   /**
+   * Client lifecycles map
+   *
+   * @type {Map<string, Promise<void>>}
+   */
+  private lifecycles: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+
+  /**
+   * Disconnecting clients set
+   *
+   * @type {Set<string>}
+   */
+  private disconnecting: Set<string> = new Set<string>();
+
+  /**
+   * Indicates if the server is stopping
+   *
+   * @type {boolean}
+   */
+  private stopping: boolean = false;
+
+  /**
+   * Server close lifecycle promise
+   *
+   * @type {Promise<void>}
+   */
+  private close: Promise<void> = Promise.resolve();
+
+  /**
    * Extensions array (before)
    *
-   * @private
    * @type {Array<Extension>}
    */
   private extensionsBefore: Array<Extension> = new Array<Extension>();
@@ -120,7 +135,6 @@ export class Server {
   /**
    * Extensions array (after)
    *
-   * @private
    * @type {Array<Extension>}
    */
   private extensionsAfter: Array<Extension> = new Array<Extension>();
@@ -148,17 +162,18 @@ export class Server {
     private options: ServiceOptions,
   ) {
     this.limit = this.options.pendings ?? MAX_PENDINGS;
-    this.catchExceptions();
     this.http = http.createServer();
     this.server = this.service.transport === TransportType.TCP ? new SocketServer() : new WebSocketServer({ server: this.http });
     if (!Block.validate(this.options.block ?? DEFAULT_BLOCK_SIZE)) {
-      this.log.error(`${this.service.name} block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
+      this.log.error(`block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
-    }    
+    }
     this.server.on(CONNECTION_EVENT, (socket: SocketType, message: IncomingMessage) => this.onConnect(socket, message));
     this.server.on(LISTENING_EVENT, () => this.onListening());
     this.server.on(ERROR_EVENT, (error: Error) => this.onError(error));
-    this.server.on(CLOSE_EVENT, () => this.onClose());
+    this.server.on(CLOSE_EVENT, () => {
+      this.close = this.onClose();
+    });
   }
 
   /**
@@ -181,21 +196,37 @@ export class Server {
    * Stop server
    */
   async stop(): Promise<void> {
+    if (this.stopping) {
+      return;
+    }
+    this.stopping = true;
     this.log.info(`stop`, LoggerScope.System);
     this.list.forEach((client: Client) => {
       client.kick(DisconnectReason.ServerDown);
     });
-    this.pendings.clear();
-    this.list.clear();
     switch (this.service.transport) {
       case TransportType.TCP:
-        (this.server as SocketServer).close();
+        if ((this.server as SocketServer).listening) {
+          const closed = once(this.server, CLOSE_EVENT);
+          (this.server as SocketServer).close();
+          await closed;
+        }
         break;
       case TransportType.WebSocket:
-        this.http.close();
+        {
+          const closed = once(this.server, CLOSE_EVENT);
+          (this.server as WebSocketServer).close();
+          if (this.http.listening) {
+            this.http.close();
+          }
+          await closed;
+        }
+        break;
       default:
         break;
     }
+    await Promise.all(this.lifecycles.values());
+    await this.close;
   }
 
   /**
@@ -280,14 +311,14 @@ export class Server {
     client.onReady = () => this.onReady(client);
     this.list.set(id, client);
     this.pendings.add(id);
-    this.extensionsBefore.forEach((item) => {
-      item.onClientConnect(client);
-    });
-    this.service.onConnect(client);
+    this.addHooks(
+      id,
+      this.extensionsBefore
+        .map((item) => () => item.onClientConnect(client))
+        .concat([() => this.service.onConnect(client)])
+        .concat(this.extensionsAfter.map((item) => () => item.onClientConnect(client))),
+    );
     this.log.info(`connected ${id}|${ip}`, LoggerScope.Debug);
-    this.extensionsAfter.forEach((item) => {
-      item.onClientConnect(client);
-    });
   }
 
   /**
@@ -295,15 +326,12 @@ export class Server {
    *
    * @private
    */
-  private onListening(): void {
-    this.extensionsBefore.forEach((item) => {
-      item.onServiceListening();
-    });
-    this.service.onListening(this.host, this.port);
+  private async onListening(): Promise<void> {
+    const hooks = this.extensionsBefore.map((item) => () => item.onServiceListening());
+    hooks.push(() => this.service.onListening(this.host, this.port));
+    hooks.push(...this.extensionsAfter.map((item) => () => item.onServiceListening()));
     this.log.info(`listening on ${this.host}:${this.port}`, LoggerScope.System);
-    this.extensionsAfter.forEach((item) => {
-      item.onServiceListening();
-    });
+    await this.processHooks(hooks);
   }
 
   /**
@@ -312,8 +340,8 @@ export class Server {
    * @private
    */
   private onError(error: Error): void {
-    this.service.onError(error);
     this.log.error(`error: ${error}`, LoggerScope.System);
+    void this.processHooks([() => this.service.onError(error)]);
   }
 
   /**
@@ -321,15 +349,12 @@ export class Server {
    *
    * @private
    */
-  private onClose(): void {
-    this.extensionsBefore.forEach((item) => {
-      item.onServiceClose();
-    });
-    this.service.onClose();
+  private async onClose(): Promise<void> {
+    const hooks = this.extensionsBefore.map((item) => () => item.onServiceClose());
+    hooks.push(() => this.service.onClose());
+    hooks.push(...this.extensionsAfter.map((item) => () => item.onServiceClose()));
     this.log.info(`closed`, LoggerScope.System);
-    this.extensionsAfter.forEach((item) => {
-      item.onServiceClose();
-    });
+    await this.processHooks(hooks);
   }
 
   /**
@@ -340,13 +365,13 @@ export class Server {
    */
   private onReady(client: Client): void {
     this.pendings.delete(client.id);
-    this.extensionsBefore.forEach((item) => {
-      item.onClientReady(client);
-    });
-    this.service.onReady(client);
-    this.extensionsAfter.forEach((item) => {
-      item.onClientReady(client);
-    });
+    this.addHooks(
+      client.id,
+      this.extensionsBefore
+        .map((item) => () => item.onClientReady(client))
+        .concat([() => this.service.onReady(client)])
+        .concat(this.extensionsAfter.map((item) => () => item.onClientReady(client))),
+    );
   }
 
   /**
@@ -358,33 +383,58 @@ export class Server {
    */
   private onDisconnect(id: string, reason: DisconnectReason): void {
     this.pendings.delete(id);
-    const client = this.list.get(id)!;
-    this.extensionsBefore.forEach((item) => {
-      item.onClientDisconnect(client, reason);
+    const client = this.list.get(id);
+    if (!client || this.disconnecting.has(id)) {
+      return;
+    }
+    this.disconnecting.add(id);
+    const hooks = this.extensionsBefore.map((item) => () => item.onClientDisconnect(client, reason));
+    hooks.push(() => this.service.onDisconnect(client, reason));
+    hooks.push(...this.extensionsAfter.map((item) => () => item.onClientDisconnect(client, reason)));
+    const previous = this.lifecycles.get(id) ?? Promise.resolve();
+    const lifecycle = previous.then(async () => {
+      await this.processHooks(hooks);
+      try {
+        await client.destroy();
+      } catch (error) {
+        this.log.error(`disconnect cleanup failed: ${error}`, LoggerScope.System);
+      }
+      this.list.delete(id);
+      this.lifecycles.delete(id);
+      this.disconnecting.delete(id);
+      this.log.info(`disconnected ${id}`, LoggerScope.Debug);
     });
-    this.service.onDisconnect(client, reason);
-    client.destroy();
-    this.list.delete(id);
-    this.log.info(`disconnected ${id}`, LoggerScope.Debug);
-    this.extensionsAfter.forEach((item) => {
-      item.onClientDisconnect(client, reason);
-    });
+    this.lifecycles.set(id, lifecycle);
+    void lifecycle.catch((error) => this.log.error(`disconnect lifecycle failed: ${error}`, LoggerScope.System));
   }
 
   /**
-   * Event when get exception
+   * Add lifecycle hooks for a client
    *
-   * @param {Error} error Unexpected exception
+   * @private
+   * @param {string} id Client connection id
+   * @param {Array<() => Promise<void>>} hooks Array of lifecycle hooks
    */
-  private onException(error: Error): void {
-    new Logger([], Tools.getTag(module)).error(`unexpected exception: ${error.stack}`, LoggerScope.All);
+  private addHooks(id: string, hooks: Array<() => Promise<void>>): void {
+    const previous = this.lifecycles.get(id) ?? Promise.resolve();
+    const lifecycle = previous.then(() => this.processHooks(hooks));
+    this.lifecycles.set(id, lifecycle);
+    void lifecycle.catch((error) => this.log.error(`lifecycle failed: ${error}`, LoggerScope.System));
   }
 
   /**
-   * Register handlers for exceptions
+   * Process an array of lifecycle hooks
+   *
+   * @private
+   * @param {Array<() => Promise<void>>} hooks Array of lifecycle hooks
    */
-  private catchExceptions(): void {
-    process.on(UNCAUGHT_EXCEPTIONS, this.onException);
-    process.on(UNHANDLED_REJECTION, this.onException);
-  }  
+  private async processHooks(hooks: Array<() => Promise<void>>): Promise<void> {
+    for (const hook of hooks) {
+      try {
+        await hook();
+      } catch (error) {
+        this.log.error(`process hooks failed: ${error}`, LoggerScope.System);
+      }
+    }
+  }
 }

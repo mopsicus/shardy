@@ -23,7 +23,6 @@ const ID_LENGTH = 10;
  * @class Bot
  */
 export class Bot {
-  
   /**
    * Callback on disconnect
    */
@@ -87,7 +86,7 @@ export class Bot {
     if (!Block.validate(this.options.block ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`[${Tools.getTag(module)}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
-    }        
+    }
   }
 
   /**
