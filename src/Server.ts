@@ -112,18 +112,18 @@ export class Server {
   private disconnecting: Set<string> = new Set<string>();
 
   /**
-   * Indicates if the server is stopping
+   * Server stop lifecycle promise
    *
-   * @type {boolean}
+   * @type {Promise<void>}
    */
-  private stopping: boolean = false;
+  private stopAction?: Promise<void>;
 
   /**
    * Server close lifecycle promise
    *
    * @type {Promise<void>}
    */
-  private close: Promise<void> = Promise.resolve();
+  private closeAction: Promise<void> = Promise.resolve();
 
   /**
    * Extensions array (before)
@@ -172,7 +172,7 @@ export class Server {
     this.server.on(LISTENING_EVENT, () => this.onListening());
     this.server.on(ERROR_EVENT, (error: Error) => this.onError(error));
     this.server.on(CLOSE_EVENT, () => {
-      this.close = this.onClose();
+      this.closeAction = this.onClose();
     });
   }
 
@@ -196,10 +196,19 @@ export class Server {
    * Stop server
    */
   async stop(): Promise<void> {
-    if (this.stopping) {
-      return;
+    if (!this.stopAction) {
+      this.stopAction = this.stopInner();
     }
-    this.stopping = true;
+    return this.stopAction;
+  }
+
+  /**
+   * Stop server internal method
+   *
+   * @private
+   * @returns {Promise<void>}
+   */
+  private async stopInner(): Promise<void> {
     this.log.info(`stop`, LoggerScope.System);
     this.list.forEach((client: Client) => {
       client.kick(DisconnectReason.ServerDown);
@@ -226,7 +235,8 @@ export class Server {
         break;
     }
     await Promise.all(this.lifecycles.values());
-    await this.close;
+    await this.closeAction;
+    await this.log.destroy();
   }
 
   /**

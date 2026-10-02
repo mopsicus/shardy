@@ -3,6 +3,52 @@ import { createLogger, format, transports, Logger as WinstonLogger } from 'winst
 import { TransformableInfo } from 'logform';
 
 /**
+ * File transport type for Winston logger
+ */
+type FileTransport = InstanceType<typeof transports.File>;
+
+/**
+ * Logger runtime interface
+ */
+interface LoggerRuntime {
+  /**
+   * Winston logger instance
+   *
+   * @type {WinstonLogger}
+   */
+  logger: WinstonLogger;
+  /**
+   * Array of file transports for the logger
+   *
+   * @type {FileTransport[]}
+   */
+  files: FileTransport[];
+  /**
+   * Number of references to this runtime
+   *
+   * @type {number}
+   */
+  references: number;
+  /**
+   * Promise that resolves when the runtime is ready
+   *
+   * @type {Promise<void>}
+   */
+  ready: Promise<void>;
+  /**
+   * Promise that resolves when the runtime is closing
+   *
+   * @type {Promise<void>}
+   */
+  closing?: Promise<void>;
+}
+
+/**
+ * Map of logger runtimes keyed by environment and log directory
+ */
+const runtimes = new Map<string, LoggerRuntime>();
+
+/**
  * Mode for filter
  * Compare all filters items by mode
  * AND for default
@@ -56,6 +102,109 @@ export interface LoggerFilter {
 }
 
 /**
+ * Create runtime format for Winston logger
+ * 
+ * @returns The Winston logger format configuration
+ */
+const makeFormat = () => {
+  return format.combine(
+    format.colorize(),
+    format.timestamp(),
+    format.prettyPrint(),
+    format.splat(),
+    format.printf((info: TransformableInfo) => {
+      const label = typeof info.label === 'string' ? info.label : '-';
+      return `${info.timestamp} [${label}] ${info.level} ${info.message}`;
+    }),
+  );
+}
+
+/**
+ * Request a logger runtime
+ * 
+ * @returns An object containing the key and the logger runtime
+ */
+const requestLogger = (): { key: string; runtime: LoggerRuntime } => {
+  const environment = process.env.ENV ?? '';
+  const directory = process.env.LOGS_DIR ?? '';
+  const key = `${environment}\0${path.resolve(__dirname, directory)}`;
+  let runtime = runtimes.get(key);
+  if (runtime?.closing) {
+    throw new Error('[logger] runtime is closing');
+  }
+  if (!runtime) {
+    const logger = createLogger({ format: makeFormat(), exitOnError: false });
+    const files: FileTransport[] = [];
+    const ready: Promise<void>[] = [];
+    logger.on('error', (error: Error) => {
+      process.stderr.write(`[logger] transport error: ${error.message}\n`);
+    });
+    const addFile = (filename: string, level?: LoggerType, handleExceptions = false) => {
+      const file = new transports.File({ filename, level, handleExceptions });
+      files.push(file);
+      ready.push(
+        new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          };
+          file.once('open', finish);
+          file.once('error', finish);
+        }),
+      );
+      logger.add(file);
+    };
+    if (environment === 'development') {
+      logger.add(new transports.Console());
+      addFile(path.join(__dirname, directory, 'all.log'));
+    } else {
+      addFile(path.join(__dirname, directory, 'info.log'), LoggerType.Info);
+      addFile(path.join(__dirname, directory, 'warnings.log'), LoggerType.Warning);
+      addFile(path.join(__dirname, directory, 'errors.log'), LoggerType.Error, true);
+    }
+    runtime = { logger, files, references: 0, ready: Promise.all(ready).then(() => undefined) };
+    runtimes.set(key, runtime);
+  }
+  runtime.references++;
+  return { key, runtime };
+};
+
+/**
+ * Free a logger runtime
+ * 
+ * @param key The key of the logger runtime
+ * @param runtime The logger runtime to free
+ * @returns A promise that resolves when the logger runtime is freed
+ */
+const freeLogger = (key: string, runtime: LoggerRuntime): Promise<void> => {
+  runtime.references--;
+  if (runtime.references > 0) {
+    return Promise.resolve();
+  }
+  if (runtime.closing) {
+    return runtime.closing;
+  }
+  runtime.closing = (async () => {
+    try {
+      await runtime.ready;
+      const closed = runtime.files.map((file) =>
+          new Promise<void>((resolve) => {
+            file.once('closed', resolve);
+          }),
+      );
+      runtime.logger.close();
+      await Promise.all(closed);
+    } finally {
+      runtimes.delete(key);
+    }
+  })();
+  return runtime.closing;
+};
+
+/**
  * Custom logger
  *
  * @export
@@ -63,20 +212,44 @@ export interface LoggerFilter {
  */
 export class Logger {
   /**
-   * Instance Winston logger
-   *
-   * @private
-   * @type {WinstonLogger}
-   */
-  private logger: WinstonLogger;
-
-  /**
    * Current filter for logger
    *
    * @private
    * @type {LoggerFilter}
    */
   private filter: LoggerFilter = {};
+
+  /**
+   * Logger instance ID
+   *
+   * @private
+   * @type {string}
+   */
+  private id: string;
+
+  /**
+   * Logger runtime instance
+   *
+   * @private
+   * @type {LoggerRuntime}
+   */
+  private runtime: LoggerRuntime;
+
+  /**
+   * Custom label for the logger
+   *
+   * @private
+   * @type {string}
+   */
+  private label?: string;
+
+  /**
+   * Destroy action promise
+   *
+   * @private
+   * @type {Promise<void>}
+   */
+  private destroyAction?: Promise<void>;
 
   /**
    * Creates an instance of Logger
@@ -88,34 +261,14 @@ export class Logger {
     private tags: string[],
     label?: string,
   ) {
-    this.logger = createLogger({ format: this.logFormat(), exitOnError: false });
+    const acquired = requestLogger();
+    this.id = acquired.key;
+    this.runtime = acquired.runtime;
     if (label) {
       this.setLabel(this.tags, label);
     }
     if (process.env.ENV === 'development') {
       this.filter.type = [LoggerType.All];
-      this.logger.add(new transports.Console());
-      this.logger.add(new transports.File({ filename: path.join(__dirname, process.env.LOGS_DIR, 'all.log') }));
-    } else {
-      this.logger.add(
-        new transports.File({
-          filename: path.join(__dirname, process.env.LOGS_DIR, 'info.log'),
-          level: LoggerType.Info,
-        }),
-      );
-      this.logger.add(
-        new transports.File({
-          filename: path.join(__dirname, process.env.LOGS_DIR, 'warnings.log'),
-          level: LoggerType.Warning,
-        }),
-      );
-      this.logger.add(
-        new transports.File({
-          filename: path.join(__dirname, process.env.LOGS_DIR, 'errors.log'),
-          level: LoggerType.Error,
-          handleExceptions: true,
-        }),
-      );
     }
   }
 
@@ -155,9 +308,9 @@ export class Logger {
    * @private
    * @type {*}
    */
-  private checkFilter = format((info: TransformableInfo) => {
+  private checkFilter(type: LoggerType, scope: LoggerScope, message: string): boolean {
     if (this.isFilterEmpty(this.filter)) {
-      return false;
+      return true;
     }
     const mode = this.filter.mode ? this.filter.mode : LoggerFilterMode.And;
     const conditions: boolean[] = [];
@@ -168,14 +321,14 @@ export class Logger {
       if (this.filter.scope.includes(LoggerScope.All)) {
         conditions.push(true);
       } else {
-        conditions.push(this.filter.scope.includes(info.scope));
+        conditions.push(this.filter.scope.includes(scope));
       }
     }
     if (this.filter.type) {
       if (this.filter.type.includes(LoggerType.All)) {
         conditions.push(true);
       } else {
-        conditions.push(this.filter.type.includes(info.type));
+        conditions.push(this.filter.type.includes(type));
       }
     }
     if (this.filter.tags && this.tags) {
@@ -184,7 +337,7 @@ export class Logger {
       }
     }
     if (this.filter.contains) {
-      conditions.push(info.message.indexOf(this.filter.contains) >= 0);
+      conditions.push(message.indexOf(this.filter.contains) >= 0);
     }
     let isPassed = false;
     switch (mode) {
@@ -200,26 +353,21 @@ export class Logger {
       default:
         break;
     }
-    return isPassed ? info : false;
-  });
+    return isPassed;
+  }
 
   /**
-   * Format options for logger
+   * Write log message
    *
-   * @param {string} [label] Label for logger
+   * @private
+   * @param {LoggerType} level Log level
+   * @param {string} message Log message
+   * @param {LoggerScope} scope Log scope
    */
-  private logFormat(label?: string) {
-    return format.combine(
-      format.label({ label: label ? label : this.formatLabelTag() }),
-      format.colorize(),
-      format.timestamp(),
-      format.prettyPrint(),
-      format.splat(),
-      this.checkFilter(),
-      format.printf((info: TransformableInfo) => {
-        return `${info.timestamp} [${info.label}] ${info.level} ${info.message}`;
-      }),
-    );
+  private write(level: LoggerType, message: string, scope: LoggerScope): void {
+    if (!this.destroyAction && this.checkFilter(level, scope, message)) {
+      this.runtime.logger.log({ level, message, type: level, scope, label: this.label ?? this.formatLabelTag() });
+    }
   }
 
   /**
@@ -232,7 +380,7 @@ export class Logger {
    */
   setLabel(data: string[] = [], label?: string): void {
     this.tags = data;
-    this.logger.format = this.logFormat(label);
+    this.label = label || undefined;
   }
 
   /**
@@ -283,7 +431,7 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   info(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.logger.info(message, { type: LoggerType.Info, scope });
+    this.write(LoggerType.Info, message, scope);
   }
 
   /**
@@ -293,7 +441,7 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   warn(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.logger.warn(message, { type: LoggerType.Warning, scope });
+    this.write(LoggerType.Warning, message, scope);
   }
 
   /**
@@ -303,13 +451,16 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   error(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.logger.error(message, { type: LoggerType.Error, scope });
+    this.write(LoggerType.Error, message, scope);
   }
 
   /**
    * Destroy
    */
-  destroy(): void {
-    this.logger.destroy();
+  destroy(): Promise<void> {
+    if (!this.destroyAction) {
+      this.destroyAction = freeLogger(this.id, this.runtime);
+    }
+    return this.destroyAction;
   }
 }

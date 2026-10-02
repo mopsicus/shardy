@@ -181,6 +181,6 @@ export class Client {
    */
   async destroy(): Promise<void> {
     this.commander.destroy();
-    this.log.destroy();
+    await this.log.destroy();
   }
 }

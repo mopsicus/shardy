@@ -209,7 +209,7 @@ export class Bot {
    * Destroy bot
    */
   async destroy(): Promise<void> {
-    this.client.destroy();
+    await this.client.destroy();
   }
 
   /**
