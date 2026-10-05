@@ -76,15 +76,15 @@ test('runs disconnect cleanup once and removes the client after hooks finish', a
     },
   });
   const client = {
-    id: 'client-1',
+    connectionId: 'client-1',
     log: { setFilter() {}, clearFilter() {} },
     async destroy() {
       destroys++;
       trace.push('destroy');
     },
   };
-  server.clients.set(client.id, client);
-  server.pendingHandshakes.add(client.id);
+  server.clients.set(client.connectionId, client);
+  server.pendingHandshakes.add(client.connectionId);
   server.extensionsBefore.push({
     async onClientDisconnect() {
       trace.push('before');
@@ -97,14 +97,14 @@ test('runs disconnect cleanup once and removes the client after hooks finish', a
   });
 
   try {
-    server.onDisconnect(client.id, DisconnectReason.Normal);
-    server.onDisconnect(client.id, DisconnectReason.Normal);
-    await server.clientLifecycles.get(client.id);
+    server.onDisconnect(client.connectionId, DisconnectReason.Normal);
+    server.onDisconnect(client.connectionId, DisconnectReason.Normal);
+    await server.clientLifecycles.get(client.connectionId);
 
     assert.deepEqual(trace, ['before', 'service', 'after', 'destroy']);
     assert.equal(destroys, 1);
-    assert.equal(server.clients.has(client.id), false);
-    assert.equal(server.pendingHandshakes.has(client.id), false);
+    assert.equal(server.clients.has(client.connectionId), false);
+    assert.equal(server.pendingHandshakes.has(client.connectionId), false);
   } finally {
     await restore();
   }

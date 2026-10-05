@@ -379,9 +379,9 @@ export class Server {
    * @param {Client} client Client instance
    */
   private onReady(client: Client): void {
-    this.pendingHandshakes.delete(client.id);
+    this.pendingHandshakes.delete(client.connectionId);
     this.scheduleLifecycleHooks(
-      client.id,
+      client.connectionId,
       this.extensionsBefore
         .map((item) => () => item.onClientReady(client))
         .concat([() => this.service.onReady(client)])

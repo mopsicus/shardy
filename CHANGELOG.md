@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-10-05
+
+### Added
+- Added `error()` to Bot and Client for sending error responses to requests
+
+### Changed
+- Breaking: renamed `Bot.start()` to `Bot.connect()`, `Client.id` and `Commander.cid` to `connectionId`, and `Transport.calculatePackageSize()` to `calculateFrameBodySize()`
+- Updated API documentation and tests for the renamed methods and connection ID properties
+- Clarified protocol frame-size limit messages
+
 ## [1.3.0] - 2026-10-05
 
 ### Added
