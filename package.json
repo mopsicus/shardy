@@ -1,24 +1,36 @@
 {
   "name": "shardy",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Framework for online games and applications on Node.js",
   "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.12.1",
   "author": "Mopsicus <mail@mopsicus.ru>",
   "homepage": "https://github.com/mopsicus/shardy",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mopsicus/shardy.git"
+    "url": "git+https://github.com/mopsicus/shardy.git"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "/dist"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.map"
   ],
   "scripts": {
-    "build-ts": "tsc",
-    "format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-    "build": "npm run build-ts && npm run lint",
-    "lint": "tsc --noEmit && eslint \"**/*.{js,ts}\" --quiet --fix && npm run format"
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test",
+    "bench:connection": "npm run build && node benchmark/connection.mjs",
+    "bench:timers": "npm run build && node benchmark/timers.mjs",
+    "format": "prettier --config .prettierrc --write \"src/**/*.ts\"",
+    "format:check": "prettier --config .prettierrc --check \"src/**/*.ts\"",
+    "lint": "eslint src"
   },
   "keywords": [
     "shardy",
@@ -42,23 +54,17 @@
     "url": "https://github.com/mopsicus/shardy/issues"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "ip": "^2.0.1",
-    "winston": "^3.14.2",
-    "ws": "^8.18.0"
+    "winston": "^3.19.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.1.0",
-    "@eslint/js": "^9.11.1",
-    "@types/eslint": "^9.6.1",
-    "@types/ip": "^1.1.3",
-    "@types/node": "^22.7.3",
-    "@types/ws": "^8.5.12",
-    "@typescript-eslint/eslint-plugin": "^8.7.0",
-    "@typescript-eslint/parser": "^8.7.0",
-    "eslint": "^9.11.1",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-prettier": "^5.2.1",
-    "typescript": "^5.6.2"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.1",
+    "@types/ws": "^8.18.2",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.0"
   }
 }

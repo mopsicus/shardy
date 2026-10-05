@@ -10,9 +10,9 @@ First of all, you need to create a directory and file structure for your new ser
     │   │   ├── command.ts
     │   │   └── ...
     │   ├── app.ts
-    │   ├── MyValidator.ts
-    │   ├── MySerializer.ts
-    │   └── MyService.ts
+    │   ├── my-handshake.ts
+    │   ├── my-serializer.ts
+    │   └── my-service.ts
     ├── .env
     ├── .gitignore
     ├── .tsconfig
@@ -34,10 +34,10 @@ npm install shardy
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { Server, ServiceOptions, Task, Tools, TransportType } from 'shardy';
-import { MySerializer } from './MySerializer';
-import { MyHandshake } from './MyHandshake';
-import { MyService } from './MyService';
+import { CommandHandler, Server, ServiceOptions, Tools, TransportType } from 'shardy';
+import { MySerializer } from './my-serializer';
+import { MyHandshake } from './my-handshake';
+import { MyService } from './my-service';
 
 /**
  * Get config and apply
@@ -49,7 +49,7 @@ dotenv.config({ path: config });
  * Init service and run
  */
 const init = async (): Promise<void> => {
-  let commands = await loadCommands();
+  const commands = await loadCommands();
   const validator = new MyHandshake();
   const serializer = new MySerializer();
   const service = new MyService();
@@ -80,19 +80,19 @@ Why are we doing this? There are different ways to identify the client, you need
 ```ts
 export class MyValidator implements Validator {
 
-  verifyHandshake(body: Buffer): ValidatorState {
+  verifyHandshake(handshakePayload: Buffer): ValidatorState {
   // vefify initial handshake
   }
   
-  verifyAcknowledgement(body: Buffer): ValidatorState {
+  verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
   // vefify acknowledgement data
   }
   
-  acknowledgement(body: Buffer): Buffer {
+  acknowledgement(handshakePayload: Buffer): Buffer {
   // data for acknowledgement after handshake validation passed
   }
   
-  handshake(body?: Buffer): Buffer {
+  handshake(customHandshakePayload?: Buffer): Buffer {
   // data for initial handshake
   }
 
@@ -104,16 +104,16 @@ export class MyValidator implements Validator {
 
 # 🧱 Serializer
 
-Shardy uses a custom serializer for all transmitted data. You have to create your own serializer class by inheriting the `Serializer` class, implement encode/decode methods and pass it to your service and client. The main goal – encode `PayloadData` to `Buffer` before sending and back after receiving. See [API](./reference.md#️-payload) for details.
+Shardy uses a custom serializer for all transmitted data. Create a serializer class that implements the `Serializer` interface, provide its `encode` and `decode` methods, and pass it to your service and client. Its purpose is to encode `PayloadData` to `Buffer` before sending and decode it after receiving. See [API](./reference.md#️-payload) for details.
 
 ```ts
 export class MySerializer implements Serializer {
 
-  encode(body: PayloadData): Buffer {
+  encode(payload: PayloadData): Buffer {
   // encode PayloadData to Buffer for sending
   }
   
-  decode(body: Buffer): PayloadData {
+  decode(encodedPayload: Buffer): PayloadData {
   // decode recevied data and serialize it to PayloadData
   }
 
@@ -137,15 +137,19 @@ I prefer to separate each command by file, I think it's a good practice, and tha
 
 ```ts
 const root = `./src/commands`;
-Tools.walk(root).forEach(async (file) => {
-  const name = path.basename(file, '.ts');
-  const dir = path.parse(file).dir.split(path.sep).slice(1).join(path.sep);
-  const task = await import(`./${path.join(dir, name)}`);
-  commands.set(name, task[name]);
-});
+const loadCommands = async (): Promise<Map<string, CommandHandler>> => {
+  const commands = new Map<string, CommandHandler>();
+  for (const file of Tools.walk(root)) {
+    const name = path.basename(file, '.ts');
+    const dir = path.parse(file).dir.split(path.sep).slice(1).join(path.sep);
+    const commandExports = await import(`./${path.join(dir, name)}`);
+    commands.set(name, commandExports[name]);
+  }
+  return commands;
+};
 ```
 
-`Tools.walk` is a built-in function to find all files in directory (recursive). In the above example, the script finds all the commands in the directory and imports them into the `commands` map. After that, you have to pass commands to service on initialization state.
+`Tools.walk` is a built-in function to find all files in directory (recursive). In the above example, the script imports each command before returning the populated `commands` map. Await `loadCommands()` before starting the server.
 
 Another way is to import the commands, fill the map manually and pass to the service:
 
@@ -154,7 +158,7 @@ import { echo } from './commands/echo';
 import { fail } from './commands/fail';
 import { notify } from './commands/notify';
 
-const commands = new Map<string, Task>();
+const commands = new Map<string, CommandHandler>();
 commands.set('echo', echo);
 commands.set('fail', fail);
 commands.set('notify', notify);
@@ -215,9 +219,11 @@ If you are using the Shardy template, you can try the scripts for debugging:
 "scripts": {
   "build-ts": "tsc",
   "format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-  "build": "npm run build-ts && npm run lint",
+  "format:check": "prettier --config .prettierrc --check 'src/**/*.ts'",
+  "build": "npm run build-ts",
+  "typecheck": "tsc --noEmit",
   "debug": "npm run build && npm run watch-debug",
-  "lint": "tsc --noEmit && eslint \"**/*.{js,ts}\" --quiet --fix && npm run format",
+  "lint": "eslint src",
   "serve-debug": "nodemon --inspect dist/app.js",
   "serve": "node dist/app.js",
   "start": "npm run serve",

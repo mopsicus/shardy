@@ -14,7 +14,7 @@
 
 # 💬 Описание
 
-Shardy – это фреймворк для онлайн игр и приложений на Node.js. Он предоставляет базовую функциональность для построения микросервисных решений: мобильных, социальных, веб, многопользовательских игр, приложений реального времени, чатов, middleware сервисов и т.п.
+Shardy – это фреймворк для онлайн игр и приложений на Node.js 24 или новее. Он предоставляет базовую функциональность для построения микросервисных решений: мобильных, социальных, веб, многопользовательских игр, приложений реального времени, чатов, middleware сервисов и т.п.
 
 Основная цель Shardy – предоставить простое бесплатное решение для создания почти любого интернет-проекта. 💪
 
@@ -69,7 +69,7 @@ Shardy – это фреймворк для онлайн игр и прилож�
 Все ваши остальные объекты, классы, БД и т.д. должны быть связаны с этим классом, иначе вы не сможете получить к ним доступ из команд\запросов.
 
 ```ts
-import { TransportType, Service, Client } from 'shardy';
+import { TransportType, Service, Client, DisconnectReason } from 'shardy';
 
 export class MyService implements Service {
 
@@ -87,7 +87,7 @@ export class MyService implements Service {
     // новый клиент подключился
     }
 
-    async onDisconnect(client: Client): Promise<void> {
+    async onDisconnect(client: Client, reason: DisconnectReason): Promise<void> {
     // клиент отключился
     }
 
@@ -95,7 +95,7 @@ export class MyService implements Service {
     // клиент готов к работе
     }       
 
-    async onListening(): Promise<void> {
+    async onListening(host: string, port: number): Promise<void> {
     // сервис запущен
     }
 
@@ -119,13 +119,13 @@ Shardy API удобен в использовании, он предоставл
 Запрос:
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // отправка запроса и получение ответа с данными
 });
 ```
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // отправка запроса с данными
 }, payload);
 ```
@@ -143,7 +143,7 @@ client.command('status', payload); // отправка команды с дан�
 Подписка:
 
 ```ts
-client.on('status', (data) => {
+client.on('status', (payload) => {
 // подписка на команду и обработка при каждом получении
 });
 ```
@@ -194,26 +194,26 @@ export const status = (commander: Commander, payload: PayloadData, service: Serv
 
 Если в вашей реализации нет необходимости делать двухэтапное рукопожатие, вы можете установить "заглушки" на этих методах.
 
-Shardy предоставляет интерфейс для валидации рукопожатия. Вы можете реализовать собственную структуру данных рукопожатия и валидацию для всех этих этапов. Наследуйте класс `Validator`, реализуйте методы и передайте его своему сервису и клиенту.
+Shardy предоставляет интерфейс для валидации рукопожатия. Вы можете реализовать собственную структуру данных рукопожатия и валидацию для всех этих этапов. Реализуйте интерфейс `Validator` и передайте эту реализацию сервису и клиенту.
 
 ```ts
 import { Validator, ValidatorState } from 'shardy';
 
 export class MyHandshake implements Validator {
 
-    verifyHandshake(body: Buffer): ValidatorState {
+    verifyHandshake(handshakePayload: Buffer): ValidatorState {
     // проверка первоначального рукопожатия
     }
 
-    verifyAcknowledgement(body: Buffer): ValidatorState {
+    verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
     // проверка данных подтверждения
     }
 
-    acknowledgement(body: Buffer): Buffer {
+    acknowledgement(handshakePayload: Buffer): Buffer {
     // данные для подтверждения после успешного первичного рукопожатия
     }
 
-    handshake(body?: Buffer): Buffer {
+    handshake(customHandshakePayload?: Buffer): Buffer {
     // данные для первичного рукопожатия
     }
 
@@ -227,18 +227,18 @@ export class MyHandshake implements Validator {
 
 Shardy поддерживает пользовательскую сериализацию передаваемых данных. Вы можете использовать JSON, MessagePack, Protobuf, FlatBuffers и т.д. или свой собственный сериализатор.
 
-Достаточно наследовать класс `Serializer`, реализовать методы encode/decode и передать его своему сервису и клиенту.
+Реализуйте интерфейс `Serializer`, предоставьте методы `encode` и `decode` и передайте эту реализацию сервису и клиенту.
 
 ```ts
 import { PayloadData, Serializer } from 'shardy';
 
 export class MyJsonSerializer implements Serializer {
 
-    encode(body: PayloadData): Buffer {
+    encode(payload: PayloadData): Buffer {
     // перекодируйте PayloadData в Buffer для отправки
     }
 
-    decode(body: Buffer): PayloadData {
+    decode(encodedPayload: Buffer): PayloadData {
     // декодируйте полученные данные и сериализуйте в PayloadData
     }
 
@@ -250,7 +250,7 @@ export class MyJsonSerializer implements Serializer {
 
 ### Расширения
 
-Вы можете улучшить свои Shardy-сервисы с помощью расширений. Достаточно наследовать класс `Extension`, реализовать необходимые методы и выбрать режим `ExtensionMode` для обработки: использовать расширение до методов сервиса или после, подключить их до старта сервера.
+Вы можете улучшить свои Shardy-сервисы с помощью расширений. Реализуйте интерфейс `Extension`, выберите режим `ExtensionMode` для вызова до или после методов сервиса и зарегистрируйте расширение до запуска сервера.
 
 ```ts
 const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, service, { validator, serializer, commands });

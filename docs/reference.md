@@ -7,11 +7,11 @@ Block is composed of two parts: **header** and **body**. The header part describ
 ### Structure
 
 *type* – block type, 1 byte
-- 0x01: handshake – handshake request from client to server and handshake response
-- 0x02: handshake acknowledgement – handshake acknowledgement on request
-- 0x03: heartbeat – empty block for check connection heartbeat
-- 0x04: data – block with some data
-- 0x05: kick – disconnect signal
+- 0x00: handshake – handshake request from client to server and handshake response
+- 0x01: handshake acknowledgement – handshake acknowledgement on request
+- 0x02: heartbeat – empty block for check connection heartbeat
+- 0x03: data – block with some data
+- 0x04: kick – disconnect signal
   
 *length* – length of body, 3 bytes big-endian integer
 
@@ -35,27 +35,27 @@ export enum BlockType {
   /**
    * Handshake process
    */
-  Handshake,
+  Handshake = 0x00,
 
   /**
    * Acknowledgement for success verify
    */
-  HandshakeAcknowledgement,
+  HandshakeAcknowledgement = 0x01,
 
   /**
    * Ping
    */
-  Heartbeat,
+  Heartbeat = 0x02,
 
   /**
    * Data for command, request, response
    */
-  Data,
+  Data = 0x03,
 
   /**
    * Kick from server, disconnect
    */
-  Kick,
+  Kick = 0x04,
 }
 ```
 
@@ -67,27 +67,35 @@ The [`Protocol`](#️-protocol) receives the type of received block and switch [
 /**
  * Encode block for transporting
  *
- * @param {BlockType} type Block type: data, kick or heartbeat
- * @param {Buffer} body Body to send
+ * @param {BlockType} blockType Block type: data, kick or heartbeat
+ * @param {Buffer} blockBody Body to send
  * @return {*}  {Buffer} Encoded type + body
  */
-static encode(type: BlockType, body: Buffer): Buffer;
+static encode(blockType: BlockType, blockBody: Buffer): Buffer;
 
 /**
  * Decode block data
  *
- * @param {Buffer} data Buffer with data to decode
+ * @param {Buffer} encodedData Buffer with data to decode
  * @return {*}  {BlockData} Result with type as BlockType and body as Buffer
  */
-static decode(data: Buffer): BlockData;
+static decode(encodedData: Buffer): BlockData;
 
 /**
  * Check received block
  *
- * @param {BlockType} type Byte index for BlockType
+ * @param {BlockType} blockType Block type to validate
  * @return {*}  {boolean} Is correct block or not
  */
-static check(type: BlockType): boolean;  
+static check(blockType: BlockType): boolean;
+
+/**
+ * Validate block body limit
+ * 
+ * @param blockBodySize Size of the block body to validate
+ * @returns {boolean} True if the size is valid, false otherwise
+ */
+static validate(blockBodySize: number): boolean;
 
 ```
 
@@ -129,82 +137,82 @@ async start(): Promise<void>;
 /**
  * Send command (event) to server
  *
- * @param {string} command Command name
- * @param {Buffer} data Payload data
+ * @param {string} commandName Command name
+ * @param {Buffer} commandPayload Command payload bytes
  */
-async command(command: string, data?: Buffer): Promise<void>;
+async command(commandName: string, commandPayload?: Buffer): Promise<void>;
 
 /**
  * Send request to server and wait response
  *
- * @param {string} request Request name
- * @param {Buffer} data Payload data
+ * @param {string} requestName Request name
+ * @param {Buffer} requestPayload Request payload bytes
  */
-async fetch(request: string, data?: Buffer): Promise<PayloadData>;
+async fetch(requestName: string, requestPayload?: Buffer): Promise<PayloadData>;
 
 /**
  * Send request to server and wait response in callback
  * Return request id, it may be canceled
  *
- * @param {string} request Request name
- * @param {ResponseType} callback Callback with response
- * @param {Buffer} data Payload data
+ * @param {string} requestName Request name
+ * @param {ResponseCallback} responseCallback Callback with response
+ * @param {Buffer} requestPayload Request payload bytes
  */
-async request(request: string, callback: ResponseType, data?: Buffer): Promise<number>;
+async request(requestName: string, responseCallback: ResponseCallback, requestPayload?: Buffer): Promise<number>;
 
 /**
  * Send response on request
  *
- * @param {PayloadData} request Request from with id, etc
- * @param {Buffer} [data] Data to send
+ * @param {PayloadData} requestPayload Request received from the peer
+ * @param {Buffer} [responsePayload] Response payload bytes
  */
-async response(request: PayloadData, data?: Buffer): Promise<void>;
+async response(requestPayload: PayloadData, responsePayload?: Buffer): Promise<void>;
 
 /**
  *  Subscribe on command from server
  *
- * @param {string} command Command name
- * @param {ResponseType} callback Callback to subscribe
+ * @param {string} commandName Command name
+ * @param {ResponseCallback} commandHandler Handler for the subscribed command
  */
-async on(command: string, callback: ResponseType): Promise<void>;
+async on(commandName: string, commandHandler: ResponseCallback): Promise<void>;
 
 /**
  * Unsubscribe from command
- * If callback is null -> clear all of them
+ * If no handler is supplied, clear all handlers
  *
- * @param {string} command Command name
- * @param {ResponseType} callback Callback to unsubscribe
+ * @param {string} commandName Command name
+ * @param {ResponseCallback} commandHandler Handler to unsubscribe
  */
-async off(command: string, callback?: ResponseType): Promise<void>;
+async off(commandName: string, commandHandler?: ResponseCallback): Promise<void>;
 
 /**
  * Cancel request
  *
- * @param {number} id Request id
+ * @param {number} requestId Request id
  */
-async cancel(id: number): Promise<void>;
+async cancel(requestId: number): Promise<void>;
 
 /**
  *  Subscribe on request from server that wait response
  *
- * @param {string} request Request name
- * @param {ResponseType} callback Callback
+ * @param {string} requestName Request name
+ * @param {ResponseCallback} requestHandler Handler for the subscribed request
  */
-async onRequest(request: string, callback: ResponseType): Promise<void>;
+async onRequest(requestName: string, requestHandler: ResponseCallback): Promise<void>;
 
 /**
  * Unsubscribe from request from server that wait response
  *
- * @param {string} request Rommand name
+ * @param {string} requestName Request name
  */
-async offRequest(request: string): Promise<void>;
+async offRequest(requestName: string): Promise<void>;
 
 /**
  * Start client handshake
  * 
- * @param {Buffer} [body] Custom data for handshake
+ * @param {Buffer} [handshakePayload] Custom handshake payload
  */
-async handshake(body?: Buffer): Promise<void>;
+async handshake(handshakePayload?: Buffer): Promise<void>;
 
 /**
  * Disconnect from server
@@ -270,24 +278,24 @@ The `Commander` is the next important part of Shardy – it controls how to rece
 
 Each `Сlient` has its own `Commander` with its own requests counter and subscription list for various events.
 
-Each command is a function of type `Task`:
+Each command is a function of type `CommandHandler`:
 
 ```ts
 /**
- * Type for loaded commands and requests
+ * Handler for commands and requests loaded by a service
  */
-export type Task = (commander: Commander, payload: PayloadData, service: Service) => void;
+export type CommandHandler = (commander: Commander, payload: PayloadData, service: Service) => void | Promise<void>;
 ```
 
 Well, this means you have access to `Commander` (sending a response or error), to [`Payload`](#-payload) (processing data), to [`Service`](#️-service) (reading/writing to the DB or elsewhere) from any your command.
 
-When you make a request, you need to set the callback method to get the result with the received data. For requests and subscriptions, there is a `ResponseType`. This is the method that returns `PayloadData`.
+When you make a request, you can provide a response handler to receive its `PayloadData`. Command and request subscriptions use the same `ResponseCallback` signature.
 
 ```ts
 /**
- * Type for requests callbacks
+ * Handler invoked with a response payload
  */
-export type ResponseType = (data: PayloadData) => void;
+export type ResponseCallback = (payload: PayloadData) => void | Promise<void>;
 
 /**
  * Make request and process the response in an anonymous method
@@ -297,22 +305,24 @@ bot.request('status', (response) => {
 });
 
 /**
- * Handler for subscription is ResponseType
+ * Handler for a command subscription is ResponseCallback
  */
-callback = async (data: PayloadData) => {
-  // process data here
+const commandHandler: ResponseCallback = async (payload) => {
+  // process the command payload here
 };
 
 /**
  * Subscribe on event
  */
-bot.on('timer', this.callback);
+bot.on('timer', commandHandler);
 
 /**
  * Unsubscribe from event
  */
-bot.off('timer', this.callback);
+bot.off('timer', commandHandler);
 ```
+
+Import `CommandHandler` and `ResponseCallback` from `shardy`.
 
 ### CommanderMode
 
@@ -342,6 +352,18 @@ Also, `Commander` manages heartbeat via the [`Pulse`](#-pulse) class and detects
 `Сonnection` determines how to read and write to the socket depending on which [`TransportType`](#transporttype) is selected.
 
 Shardy supports two types of transport: `TCP` and `WebSocket`. You can use either of them in your projects. The [Unity client](https://github.com/mopsicus/shardy-unity) also supports these transport types, so you can make WebGL builds with `WebSocket` transport and they will work out of the box.
+
+`Connection` exposes its queue and lifecycle state for inspection:
+
+```ts
+outgoingBytes: number;
+isBlocked: boolean;
+isSending: boolean;
+isClosing: boolean;
+isClosed: boolean;
+```
+
+Use `outgoingBytes` to inspect the number of bytes currently queued for sending.
 
 # 🧩 Extension
 
@@ -465,17 +487,17 @@ Available methods:
  *
  * If label exists it will replace data info
  *
- * @param {string[]} [data=[]] Info with connection and data
+ * @param {string[]} [tags=[]] Connection and client tags
  * @param {string} [label] Custom label
  */
-setLabel(data: string[] = [], label?: string): void;
+setLabel(tags: string[] = [], label?: string): void;
 
 /**
  * Update filter
  *
- * @param {LoggerFilter} data Filter options
+ * @param {LoggerFilter} filter Logger filter options
  */
-setFilter(data: LoggerFilter): void;
+setFilter(filter: LoggerFilter): void;
 
 /**
  * Clear filter
@@ -538,46 +560,46 @@ If environment is `development`, logs are written to the console and the `all.lo
  *
  * @static
  * @param {Serializer} serializer Service serializer
- * @param {PayloadType} type Type of data
- * @param {string} name Command or request name
- * @param {number} id Request id
- * @param {Buffer} [data] Data
- * @param {string} [error] Error message or code
+ * @param {PayloadType} payloadType Type of payload
+ * @param {string} commandOrRequestName Command or request name
+ * @param {number} requestId Request id
+ * @param {Buffer} [payloadBuffer] Payload bytes
+ * @param {string} [errorMessage] Error message or code
  * @return {*}  {Buffer} Encoded buffer data
  */
-static encode(serializer: Serializer, type: PayloadType, name: string, id: number, data?: Buffer, error?: string): Buffer;
+static encode(serializer: Serializer, payloadType: PayloadType, commandOrRequestName: string, requestId: number, payloadBuffer?: Buffer, errorMessage?: string): Buffer;
 
 /**
  * Decode received block
  *
  * @static
  * @param {Serializer} serializer Service serializer
- * @param {Buffer} data Encoded buffer data
+ * @param {Buffer} encodedPayload Encoded payload buffer
  * @return {*}  {PayloadData} Payload data to use in commander
  */
-static decode(serializer: Serializer, data: Buffer): PayloadData;
+static decode(serializer: Serializer, encodedPayload: Buffer): PayloadData;
 
 /**
  * Create payload data manually without serialization
  *
  * @static
- * @param {PayloadType} type Type of data
- * @param {string} name Command or request name
- * @param {number} id Request id
- * @param {Buffer} [data] Data
- * @param {string} [error] Error message or code
+ * @param {PayloadType} payloadType Type of payload
+ * @param {string} commandOrRequestName Command or request name
+ * @param {number} requestId Request id
+ * @param {Buffer} [payloadBuffer] Payload bytes
+ * @param {string} [errorMessage] Error message or code
  * @return {*}  {PayloadData} Not encoded payload data
  */
-static create(type: PayloadType, name: string, id: number, data?: Buffer, error?: string): PayloadData;
+static create(payloadType: PayloadType, commandOrRequestName: string, requestId: number, payloadBuffer?: Buffer, errorMessage?: string): PayloadData;
 
 /**
  * Check payload for available type
  *
  * @static
- * @param {PayloadData} payload Payload data to check
- * @return {*}  {boolean} Correct or not
+ * @param {unknown} candidate Payload candidate to validate
+ * @returns {boolean} True when candidate is valid PayloadData
  */
-static check(payload: PayloadData): boolean;
+static check(payloadCandidate: unknown): payloadCandidate is PayloadData;
 ```
 
 The `check` method controls that the received data is correct and available for processing.
@@ -646,9 +668,9 @@ export enum PayloadType {
 /**
  * Send data to connection
  *
- * @param {Buffer} body Serialized command data
+ * @param {Buffer} serializedPayload Serialized command payload
  */
-send(body: Buffer): void;
+send(serializedPayload: Buffer): void;
 
 /**
  * Send heartbeat to connection
@@ -657,15 +679,15 @@ heartbeat(): void;
 
 /**
  * Send handshake to connection
- * @param {Buffer} body Buffer with handshake data
+ * @param {Buffer} handshakePayload Handshake payload bytes
  */
-handshake(body: Buffer): void;
+handshake(handshakePayload: Buffer): void;
 
 /**
  * Send acknowledgement
- * @param {Buffer} body Buffer with acknowledge data
+ * @param {Buffer} acknowledgementPayload Acknowledgement payload bytes
  */
-acknowledge(body: Buffer): void;
+acknowledge(acknowledgementPayload: Buffer): void;
 
 /**
  * Kick from server
@@ -723,7 +745,7 @@ PULSE_LIMIT=3
 PULSE_INTERVAL=1000
 ```
 
-When Shardy receives any command, handshake or heartbeat, the `checks` counter in `Pulse` is reset. Every `PULSE_INTERVAL` this class checks the `checks` counter and if the counter value is greater than `PULSE_LIMIT`, it invokes a callback to kick or send a heartbeat.
+When Shardy receives any command, handshake or heartbeat, the `pulseCheckCount` counter in `Pulse` is reset. Every `PULSE_INTERVAL`, this class checks the counter and, if its value is greater than `PULSE_LIMIT`, invokes a callback to kick or send a heartbeat.
 
 # 🏗️ Serializer
 
@@ -740,18 +762,18 @@ export interface Serializer {
    *
    * Serialize data to buffer
    *
-   * @param {PayloadData} body Target data
-   * @return {*}  {Buffer} Encoded data
+  * @param {PayloadData} payload Payload to serialize
+  * @return {Buffer} Serialized payload bytes
    */
-  encode(body: PayloadData): Buffer;
+  encode(payload: PayloadData): Buffer;
 
   /**
    * Deserialize buffer
    *
-   * @param {Buffer} body Encoded data
-   * @return {*}  {PayloadData} Data to use
+  * @param {Buffer} encodedPayload Serialized payload bytes
+  * @return {PayloadData} Decoded payload
    */
-  decode(body: Buffer): PayloadData;
+  decode(encodedPayload: Buffer): PayloadData;
 }
 ```
 
@@ -818,7 +840,7 @@ To stop your server, call `stop` - all connected clients will be disconnected wi
 
 # ⚙️ Service
 
-`Service` is the interface to your own service class. You have to implement all methods for your needs. This is the main class of your app that manages all connections.
+`Service` is the interface for your service implementation. Implement its lifecycle methods and use your service class to manage application-specific state and connections.
 
 ```ts
 /**
@@ -901,9 +923,27 @@ Before you can run your service or connect to any Shardy-service via [`Bot`](#-b
  */
 export interface ServiceOptions {
   /**
-   * List of available service commads and requests
+   * List of available service commands and requests
    */
-  commands?: Map<string, Task>;
+  commands?: Map<string, CommandHandler>;
+
+  /** 
+   * Maximum block body size in bytes
+   * Defaults to 1 MiB
+   */
+  block?: number;
+
+  /** 
+   * Maximum simultaneous connections that have not completed handshake
+   * Defaults to 64
+   */
+  pendings?: number;
+
+  /** 
+   * Maximum buffered outbound bytes per connection
+   * Defaults to 4 MiB
+   */
+  bytes?: number;
 
   /**
    * Handshake service instance
@@ -929,29 +969,29 @@ export interface ServiceOptions {
  * Generate random string id
  *
  * @static
- * @param {number} length Length for string
+ * @param {number} idLength Length of the generated id
  * @returns {string} randomized id
  */
-static generateId(length: number): string;
+static generateId(idLength: number): string;
 
 /**
  * Get tag from module filename
  *
  * @static
- * @param {NodeModule} item Node module
+ * @param {NodeModule} nodeModule Node module
  * @return {*} {string} short name lowercased
  */
 
-static getTag(item: NodeModule): string;
+static getTag(nodeModule: NodeModule): string;
 
 /**
  * Find all files in directory (recursive)
  *
  * @static
- * @param {string} directory Path to begin walk and find
- * @return {*}  {string[]} Array of paths
+ * @param {string} directoryPath Directory to search recursively
+ * @returns {string[]} Paths of all files found
  */
-static walk(directory: string): string[];
+static walk(directoryPath: string): string[];
 ```
 
 # 🚄 Transport
@@ -966,9 +1006,9 @@ The [`Protocol`](#️-protocol) can use these public methods or `Transport`: the
 /**
  * Send data to connection
  *
- * @param {Buffer} data Data to send
+ * @param {Buffer} encodedFrame Encoded frame to send
  */
-dispatch(data: Buffer): void;
+dispatch(encodedFrame: Buffer): void;
 
 /**
  * Close transport
@@ -1036,34 +1076,34 @@ export interface Validator {
   /**
    * Validate handshake data
    *
-   * @param {Buffer} body Data for validate
+  * @param {Buffer} handshakePayload Handshake payload to validate
    * @return {*}  {ValidatorState} Validation result
    */
-  verifyHandshake(body: Buffer): ValidatorState;
+  verifyHandshake(handshakePayload: Buffer): ValidatorState;
 
   /**
    * Validate acknowledgement data
    *
-   * @param {Buffer} body Data for validate
+  * @param {Buffer} acknowledgementPayload Acknowledgement payload to validate
    * @return {*}  {ValidatorState} Validation result
    */
-  verifyAcknowledgement(body: Buffer): ValidatorState;
+  verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState;
 
   /**
    * Get handshake data for send
    *
-   * @param {Buffer} [body] Custom data for handshake
+  * @param {Buffer} [customHandshakePayload] Optional custom handshake payload
    * @return {*}  {Buffer} Data from handshake
    */
-  handshake(body?: Buffer): Buffer;
+  handshake(customHandshakePayload?: Buffer): Buffer;
 
   /**
    * Get acknowledgement data for send
    *
-   * @param {Buffer} body Data from handshake
-   * @return {*}  {Buffer} Data for acknowledge
+  * @param {Buffer} handshakePayload Handshake payload to acknowledge
+  * @return {Buffer} Encoded acknowledgement payload
    */
-  acknowledgement(body: Buffer): Buffer;
+  acknowledgement(handshakePayload: Buffer): Buffer;
 }
 ```
 

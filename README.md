@@ -14,7 +14,7 @@
 
 # 💬 Overview
 
-Shardy is a framework for online games and applications on Node.js. It provides the basic functionality for building microservices solutions: mobile, social, web, multiplayer games, realtime applications, chats, middleware services, etc.
+Shardy is a framework for online games and applications on Node.js 24 or later. It provides the basic functionality for building microservices solutions: mobile, social, web, multiplayer games, realtime applications, chats, middleware services, etc.
  
 The main goal of Shardy is to give simple free solution for building almost any kind of online project. 💪
 
@@ -69,7 +69,7 @@ Your (micro)service must implement `Service` interface to handle general events.
 All your other objects, classes, DBs, etc. should be linked to this class otherwise you won't be able to access them from commands\requests files.
 
 ```ts
-import { TransportType, Service, Client } from 'shardy';
+import { TransportType, Service, Client, DisconnectReason } from 'shardy';
 
 export class MyService implements Service {
 
@@ -87,7 +87,7 @@ export class MyService implements Service {
     // new client connected
     }
 
-    async onDisconnect(client: Client): Promise<void> {
+    async onDisconnect(client: Client, reason: DisconnectReason): Promise<void> {
     // client disconnected
     }
 
@@ -95,7 +95,7 @@ export class MyService implements Service {
     // client ready to work
     }    
 
-    async onListening(): Promise<void> {
+    async onListening(host: string, port: number): Promise<void> {
     // service started
     }
 
@@ -119,13 +119,13 @@ The general difference between requests and commands that is other side must res
 Request:
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // send request and work with response in callback
 });
 ```
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // send request with payload
 }, payload);
 ```
@@ -143,7 +143,7 @@ client.command('status', payload); // send command with payload
 Subscribe:
 
 ```ts
-client.on('status', (data) => {
+client.on('status', (payload) => {
 // subscribe on command and process data whenever receive
 });
 ```
@@ -194,26 +194,26 @@ Stages of handshake:
 
 If your implementation does not need to do a two-step handshake, you can set "stubs" on these methods.
 
-Shardy provides an interface for handshake validation. You can implement your own handshake data structure and validation for all these stages. Inherit the `Validator` class, implement methods and pass it to your service and client.
+Shardy provides an interface for handshake validation. You can implement your own handshake data structure and validation for all these stages. Implement the `Validator` interface and pass the implementation to your service and client.
 
 ```ts
 import { Validator, ValidatorState } from 'shardy';
 
 export class MyHandshake implements Validator {
 
-    verifyHandshake(body: Buffer): ValidatorState {
+    verifyHandshake(handshakePayload: Buffer): ValidatorState {
     // vefify initial handshake
     }
 
-    verifyAcknowledgement(body: Buffer): ValidatorState {
+    verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
     // vefify acknowledgement data
     }
 
-    acknowledgement(body: Buffer): Buffer {
+    acknowledgement(handshakePayload: Buffer): Buffer {
     // data for acknowledgement after handshake validation passed
     }
 
-    handshake(body?: Buffer): Buffer {
+    handshake(customHandshakePayload?: Buffer): Buffer {
     // data for initial handshake
     }
 
@@ -227,18 +227,18 @@ export class MyHandshake implements Validator {
 
 Shardy supports custom serialization of transmitted data. You can use JSON, MessagePack, Protobuf, FlatBuffers, etc. or your own serializer.
 
-Just inherit the `Serializer` class, implement encode/decode methods and pass it to your service and client.
+Implement the `Serializer` interface, provide its `encode` and `decode` methods, and pass the implementation to your service and client.
 
 ```ts
 import { PayloadData, Serializer } from 'shardy';
 
 export class MyJsonSerializer implements Serializer {
 
-    encode(body: PayloadData): Buffer {
+    encode(payload: PayloadData): Buffer {
     // encode PayloadData to Buffer for transporting
     }
 
-    decode(body: Buffer): PayloadData {
+    decode(encodedPayload: Buffer): PayloadData {
     // decode recevied data and serialize to PayloadData
     }
 
@@ -250,7 +250,7 @@ export class MyJsonSerializer implements Serializer {
 
 ### Extensions
 
-You can enhance your Shardy-services with extensions. Just inherit the `Extension` class, implement methods, choose `ExtensionMode` to handle: before service callbacks or after, and apply it before starting the server.
+You can enhance your Shardy services with extensions. Implement the `Extension` interface, choose an `ExtensionMode` to run before or after service callbacks, and register the extension before starting the server.
 
 ```ts
 const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, service, { validator, serializer, commands });
