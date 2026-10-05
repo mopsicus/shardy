@@ -236,6 +236,7 @@ export class Commander {
    */
   kick(reason: DisconnectReason): void {
     this.log.info(`-> kick: ${reason}`, LoggerScope.Debug);
+    this.reason = reason;
     this.protocol.kick(reason);
     this.protocol.disconnect();
     this.pulse.clear();
@@ -744,7 +745,8 @@ export class Commander {
    * @param {BlockData} block Kick reason data
    */
   onKick(block: BlockData): void {
-    this.reason = block.body as unknown as DisconnectReason;
+    const reason = Number(block.body.toString());
+    this.reason = Number.isInteger(reason) && DisconnectReason[reason] !== undefined ? reason : DisconnectReason.Unknown;
     this.log.info(`<- kick: ${this.reason}`, LoggerScope.Debug);
     this.pulse.reset();
   }
