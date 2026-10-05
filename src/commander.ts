@@ -100,7 +100,7 @@ export class Commander {
    *
    * @type {string}
    */
-  public cid: string = 'unknown';
+  public connectionId: string = 'unknown';
 
   /**
    * Current request id counter
@@ -174,8 +174,6 @@ export class Commander {
    * @private
    * @type {string}
    */
-  private id: string;
-
   /**
    * Protocol instance
    *
@@ -218,8 +216,7 @@ export class Commander {
     private log: Logger,
     private mode: CommanderMode = CommanderMode.Service,
   ) {
-    this.id = connectionId;
-    this.cid = this.id;
+    this.connectionId = connectionId;
     this.protocol = new Protocol(this.connection, this.log, this.options.block);
     this.protocol.onBlock = (block: BlockData) => this.onBlock(block);
     this.protocol.onDisconnect = () => this.onClose();

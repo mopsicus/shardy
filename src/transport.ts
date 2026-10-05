@@ -256,16 +256,12 @@ export class Transport {
   }
 
   /**
-   * Get frame body size from header
+   * Calculate frame body size from header
    *
    * @param {Buffer} frameHeaderBuffer Frame header buffer
    * @returns {number} Frame body length
    */
-  calculatePackageSize(frameHeaderBuffer: Buffer): number {
-    return this.calculateFrameBodySize(frameHeaderBuffer);
-  }
-
-  private calculateFrameBodySize(frameHeaderBuffer: Buffer): number {
+  calculateFrameBodySize(frameHeaderBuffer: Buffer): number {
     let bodyLength = 0;
     for (let byteOffset = 1; byteOffset < BLOCK_HEAD; byteOffset++) {
       if (byteOffset > 1) {

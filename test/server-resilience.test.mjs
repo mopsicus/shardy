@@ -139,7 +139,7 @@ test('serves ten Bots and survives malformed payloads, unknown commands, and fak
       return { bot, ready };
     });
 
-    await Promise.all(readyPromises.map(({ bot }) => bot.start()));
+    await Promise.all(readyPromises.map(({ bot }) => bot.connect()));
     await Promise.all(readyPromises.map(({ ready }) => withTimeout(ready, 'Bot handshake')));
     server.log.info('[integration-service] all ten Bots are ready');
 

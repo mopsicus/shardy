@@ -121,7 +121,7 @@ bot.onReady = () => {
     // response from another service
   });
 };
-bot.start();
+bot.connect();
 ```
 
 Here `options` is an instance of [`ServiceOptions`](#serviceoptions) that contains a validator, serializer and list of commands (not normally used in Bot).
@@ -130,9 +130,9 @@ Available methods:
 
 ```ts
 /**
- * Start bot, begin connect
+ * Connect bot to a service
  */
-async start(): Promise<void>;
+async connect(): Promise<void>;
 
 /**
  * Send command (event) to server
@@ -167,6 +167,15 @@ async request(requestName: string, responseCallback: ResponseCallback, requestPa
  * @param {Buffer} [responsePayload] Response payload bytes
  */
 async response(requestPayload: PayloadData, responsePayload?: Buffer): Promise<void>;
+
+/**
+ * Send error on request
+ *
+ * @param {PayloadData} requestPayload Request received from the peer
+ * @param {string} errorMessage Error message or code
+ * @param {Buffer} [responsePayload] Response payload bytes
+ */
+async error(requestPayload: PayloadData, errorMessage: string, responsePayload?: Buffer): Promise<void>;
 
 /**
  *  Subscribe on command from server

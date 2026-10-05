@@ -39,7 +39,7 @@ export class Client {
    * Creates an instance of Client
    *
    * @param {Connection} connection Current connection
-   * @param {string} id Connection ID
+   * @param {string} connectionId Connection ID
    * @param {Logger} log Current logger
    * @param {Service} service Service instance
    * @param {ServiceOptions} options Service options
@@ -47,16 +47,16 @@ export class Client {
    */
   constructor(
     private connection: Connection,
-    public id: string,
+    public connectionId: string,
     public log: Logger,
     private service: Service,
     private options: ServiceOptions,
     private mode: CommanderMode = CommanderMode.Service,
   ) {
-    this.commander = new Commander(this.id, this.connection, this.service, this.options, this.log, this.mode);
+    this.commander = new Commander(this.connectionId, this.connection, this.service, this.options, this.log, this.mode);
     this.commander.onDisconnect = (reason: DisconnectReason) => {
       this.isConnected = false;
-      this.onDisconnect(this.id, reason);
+      this.onDisconnect(this.connectionId, reason);
     };
     this.commander.onReady = () => this.onReady();
     this.connection.setLogger(this.log);
@@ -102,6 +102,17 @@ export class Client {
    */
   async response(requestPayload: PayloadData, responsePayload?: Buffer): Promise<void> {
     this.commander.response(requestPayload, responsePayload);
+  }
+
+  /**
+   * Send error on request
+   *
+   * @param {PayloadData} requestPayload Request received from the peer
+   * @param {string} errorMessage Error message or code
+   * @param {Buffer} [responsePayload] Response payload bytes
+   */
+  async error(requestPayload: PayloadData, errorMessage: string, responsePayload?: Buffer): Promise<void> {
+    this.commander.error(requestPayload, errorMessage, responsePayload);
   }
 
   /**

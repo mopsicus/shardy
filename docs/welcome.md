@@ -126,7 +126,7 @@ LOGS_DIR=../../logs
 
 Shardy provides a built-in client for connecting to other Shardy-services and calling commands and requests.
 
-Import `Bot` from Shardy, create instance, input params to connect and pass the [service options](./reference.md#serviceoptions). Invoke `start` to connect.
+Import `Bot` from Shardy, create instance, input params to connect and pass the [service options](./reference.md#serviceoptions). Invoke `connect` to connect.
 
 > [!IMPORTANT] 
 > Make sure that `options` such as the serializer and handshake validator are the same as the service you are connecting to.  
@@ -149,7 +149,7 @@ bot.onReady = () => {
     // response from another service
   });
 };
-bot.start();
+bot.connect();
 ```
 
 What it means: 

@@ -167,7 +167,7 @@ test('exchanges commands and requests over a real TCP connection and cleans up',
       bot.onReady = resolve;
       bot.onDisconnect = (reason) => reject(new Error(`Disconnected before ready: ${reason}`));
     });
-    await bot.start();
+    await bot.connect();
     await withTimeout(ready, 'bot handshake readiness');
     await withTimeout(harness.ready, 'server client readiness');
 
@@ -208,6 +208,9 @@ test('exchanges commands and requests over a real TCP connection and cleans up',
     await bot.onRequest('server-question', async (payload) => {
       await bot.response(payload, Buffer.from('client-answer'));
     });
+    await bot.onRequest('server-error-question', async (payload) => {
+      await bot.error(payload, 'bot-rejected');
+    });
     const serverPeer = harness.events.find(([event]) => event === 'ready')?.[1];
     assert.ok(serverPeer);
     const clientRequest = serverPeer.fetch('server-question', serverRequestPayload);
@@ -215,6 +218,8 @@ test('exchanges commands and requests over a real TCP connection and cleans up',
     const serverResponse = await withTimeout(serviceRequest.promise, 'server request result');
     assert.equal(serverResponse.name, 'server-question');
     assert.equal(serverResponse.data.toString(), 'client-answer');
+    const serverError = await withTimeout(serverPeer.fetch('server-error-question'), 'server-to-Bot error response');
+    assert.equal(serverError.error, 'bot-rejected');
 
     let callbackResponse;
     const callbackResult = deferred();
@@ -273,7 +278,7 @@ test('connects two independent servers through Bot and exchanges both RPC direct
       link.onReady = resolve;
       link.onDisconnect = (reason) => reject(new Error(`Server link disconnected before readiness: ${reason}`));
     });
-    await link.start();
+    await link.connect();
     await withTimeout(linkReady, 'server A Bot readiness');
     await withTimeout(serverB.ready, 'server B client readiness');
 
@@ -355,7 +360,7 @@ test('connects a Bot over the documented WebSocket transport', { timeout: 30000 
       bot.onReady = resolve;
       bot.onDisconnect = (reason) => reject(new Error(`WebSocket Bot disconnected before readiness: ${reason}`));
     });
-    await bot.start();
+    await bot.connect();
     await withTimeout(ready, 'WebSocket handshake readiness');
     await bot.command('websocket-echo', Buffer.from('websocket-data'));
     assert.equal(await withTimeout(received.promise, 'WebSocket command delivery'), 'websocket-data');
@@ -376,7 +381,7 @@ test('stopping a server disconnects its connected Bot with ServerDown reason', {
     const port = await harness.start();
     bot = botFor(harness, port);
     bot.onReady = () => {};
-    await bot.start();
+    await bot.connect();
     await withTimeout(harness.ready, 'shutdown client readiness');
     const disconnected = new Promise((resolve) => {
       bot.onDisconnect = resolve;
@@ -436,7 +441,7 @@ test('runs registered Before and After extension hooks around service callbacks'
       bot.onReady = resolve;
       bot.onDisconnect = (reason) => reject(new Error(`Disconnected before readiness: ${reason}`));
     });
-    await bot.start();
+    await bot.connect();
     await withTimeout(ready, 'extension client readiness');
     await withTimeout(harness.ready, 'extension service client readiness');
 

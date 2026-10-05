@@ -94,9 +94,9 @@ export class Bot {
   }
 
   /**
-   * Start bot, begin connect
+   * Connect bot to a service
    */
-  async start(): Promise<void> {
+  async connect(): Promise<void> {
     const socket = this.transport === TransportType.TCP ? net.connect(this.port, this.host, () => this.onClientConnect()) : new WebSocket(`ws://${this.host}:${this.port}`);
     this.connection = new Connection(socket, this.transport, this.options.bytes);
     this.connection.onConnect = () => this.onClientConnect();
@@ -142,6 +142,17 @@ export class Bot {
    */
   async response(requestPayload: PayloadData, responsePayload?: Buffer): Promise<void> {
     this.client.response(requestPayload, responsePayload);
+  }
+
+  /**
+   * Send error on request
+   *
+   * @param {PayloadData} requestPayload Request received from the peer
+   * @param {string} errorMessage Error message or code
+   * @param {Buffer} [responsePayload] Response payload bytes
+   */
+  async error(requestPayload: PayloadData, errorMessage: string, responsePayload?: Buffer): Promise<void> {
+    this.client.error(requestPayload, errorMessage, responsePayload);
   }
 
   /**

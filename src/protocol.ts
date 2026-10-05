@@ -100,13 +100,13 @@ export class Protocol {
     }
     blockBody = blockBody ? blockBody : Buffer.alloc(0);
     if (blockBody.length > this.maxBlockBodySize) {
-      this.log.error(`[${LOG_TAG}] block body exceeds the configured limit of ${this.maxBlockBodySize} bytes`, LoggerScope.Debug);
+      this.log.error(`[${LOG_TAG}] block body exceeds the configured limit: ${this.maxBlockBodySize}`, LoggerScope.Debug);
       return;
     }
     this.log.info(`[${LOG_TAG}] dispatch type: ${blockType}, body: ${blockBody}`, LoggerScope.Debug);
     const encodedBlock = Block.encode(blockType, blockBody);
     if (encodedBlock.length === 0) {
-      this.log.error(`[${LOG_TAG}] block body exceeds the maximum of ${MAX_BLOCK_SIZE} bytes`, LoggerScope.Debug);
+      this.log.error(`[${LOG_TAG}] block body exceeds the maximum: ${MAX_BLOCK_SIZE}`, LoggerScope.Debug);
       return;
     }
     this.transport.dispatch(encodedBlock);
