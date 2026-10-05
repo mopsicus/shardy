@@ -94,6 +94,42 @@ test('notifies disconnect when explicitly destroyed and ignores later close', ()
   assert.equal(disconnects, 1);
 });
 
+test('preserves the reason when sending a kick', () => {
+  const commander = createCommander();
+  let disconnectReason;
+  commander.onDisconnect = (reason) => (disconnectReason = reason);
+
+  commander.kick(DisconnectReason.ServerDown);
+  commander.onClose();
+
+  assert.equal(disconnectReason, DisconnectReason.ServerDown);
+  commander.destroy();
+});
+
+test('decodes the reason from a received kick block', () => {
+  const commander = createCommander();
+  let disconnectReason;
+  commander.onDisconnect = (reason) => (disconnectReason = reason);
+
+  commander.onKick({ body: Buffer.from(String(DisconnectReason.ServerDown)) });
+  commander.onClose();
+
+  assert.equal(disconnectReason, DisconnectReason.ServerDown);
+  commander.destroy();
+});
+
+test('maps an invalid received kick reason to Unknown', () => {
+  const commander = createCommander();
+  let disconnectReason;
+  commander.onDisconnect = (reason) => (disconnectReason = reason);
+
+  commander.onKick({ body: Buffer.from('invalid') });
+  commander.onClose();
+
+  assert.equal(disconnectReason, DisconnectReason.Unknown);
+  commander.destroy();
+});
+
 test('removes response callbacks before invoking them even when they throw', () => {
   const commander = createCommander();
   const id = commander.request('status', () => {

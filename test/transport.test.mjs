@@ -99,7 +99,7 @@ test('uses the documented default frame limit', () => {
   assert.equal(DEFAULT_BLOCK_SIZE, 1024 * 1024);
 });
 
-test('rejects connections above the pending handshake limit', async () => {
+test('rejects connections above the pending handshake limit', { timeout: 10000 }, async () => {
   const originalEnvironment = {
     ENV: process.env.ENV,
     LOGS_DIR: process.env.LOGS_DIR,
@@ -111,8 +111,12 @@ test('rejects connections above the pending handshake limit', async () => {
 
   let acceptedClient;
   let acceptClient;
+  let disconnectClient;
   const accepted = new Promise((resolve) => {
     acceptClient = resolve;
+  });
+  const disconnected = new Promise((resolve) => {
+    disconnectClient = resolve;
   });
   const service = {
     name: 'transport-test',
@@ -121,7 +125,9 @@ test('rejects connections above the pending handshake limit', async () => {
       acceptedClient = client;
       acceptClient(client);
     },
-    async onDisconnect() {},
+    async onDisconnect(client) {
+      disconnectClient(client);
+    },
     async onReady() {},
     async onListening() {},
     async onError() {},
@@ -156,6 +162,7 @@ test('rejects connections above the pending handshake limit', async () => {
 
     first.destroy();
     await once(first, 'close');
+    await disconnected;
     assert.equal(server.pendingHandshakes.size, 0);
 
     const closed = once(server.server, 'close');
