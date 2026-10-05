@@ -1,9 +1,9 @@
 import WebSocket from 'ws';
 import { Socket } from 'net';
-import { SocketType } from './Server';
-import { TransportType } from './Transport';
-import { Logger, LoggerScope } from './Logger';
-import { Tools } from './Tools';
+import { SocketType } from './server';
+import { TransportType } from './transport';
+import { Logger, LoggerScope } from './logger';
+import { Tools } from './tools';
 
 /**
  * Tag for logs
@@ -75,7 +75,7 @@ export class Connection {
   /**
    * Callback on get data
    */
-  public onData: (data: Buffer) => void = () => {};
+  public onData: (incomingBuffer: Buffer) => void = () => {};
 
   /**
    * Callback when error occurs
@@ -103,64 +103,62 @@ export class Connection {
 
   /**
    * Number of bytes in the outgoing data queue
-   *
-   * @type {number}
    */
-  outgone: number = 0;
+  outgoingBytes: number = 0;
 
   /**
    * Whether the connection is blocked due to backpressure
    *
    * @type {boolean}
    */
-  blocked: boolean = false;
+  isBlocked: boolean = false;
 
   /**
    * Whether the connection is currently sending data through the WebSocket
    *
    * @type {boolean}
    */
-  sending: boolean = false;
+  isSending: boolean = false;
 
   /**
    * Whether the connection is in the process of closing
    *
    * @type {boolean}
    */
-  closing: boolean = false;
+  isClosing: boolean = false;
 
   /**
    * Whether the connection has been closed
    *
    * @type {boolean}
    */
-  closed: boolean = false;
+  isClosed: boolean = false;
 
   /**
    * Creates an instance of Connection
    *
    * @param {SocketType} socket Current socket instance
-   * @param {TransportType} type Transport type
+   * @param {TransportType} transportType Transport type
    */
   constructor(
     private socket: SocketType,
-    private type: TransportType,
-    private bytes: number = DEFAULT_SEND_BYTES,
+    private transportType: TransportType,
+    private maxSendBytes: number = DEFAULT_SEND_BYTES,
   ) {
-    if (!Connection.validate(this.bytes)) {
+    if (!Connection.validate(this.maxSendBytes)) {
       this.log.error(`[${LOG_TAG}] max send bytes must be a positive safe integer`, LoggerScope.Debug);
       return;
     }
-    this.socket.on(this.type === TransportType.TCP ? DATA_EVENT : MESSAGE_EVENT, (data: Buffer) => this.onData(data));
+    this.socket.on(this.transportType === TransportType.TCP ? DATA_EVENT : MESSAGE_EVENT, (incomingBuffer: Buffer) => this.onData(incomingBuffer));
     this.socket.on(ERROR_EVENT, (error: Error) => this.onSocketError(error));
     this.socket.on(CLOSE_EVENT, () => this.onSocketClose());
-    if (this.type === TransportType.TCP) {
+    if (this.transportType === TransportType.TCP) {
       this.socket.on('drain', () => {
-        this.blocked = false;
+        this.isBlocked = false;
         this.flush();
       });
     }
-    if (this.type === TransportType.WebSocket) {
+    if (this.transportType === TransportType.WebSocket) {
       this.socket.on(OPEN_EVENT, () => this.onConnect());
     }
   }
@@ -178,10 +176,10 @@ export class Connection {
    * Close socket
    */
   close(): void {
-    if (this.closing || this.closed) {
+    if (this.isClosing || this.isClosed) {
       return;
     }
-    this.closing = true;
+    this.isClosing = true;
     this.flush();
   }
 
@@ -190,13 +188,13 @@ export class Connection {
    */
   destroy(): void {
     this.log.info(`[${LOG_TAG}] destroy`, LoggerScope.Debug);
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
-    this.closed = true;
+    this.isClosed = true;
     this.outgoing = [];
-    this.outgone = 0;
-    switch (this.type) {
+    this.outgoingBytes = 0;
+    switch (this.transportType) {
       case TransportType.TCP:
         (this.socket as Socket).destroy();
         break;
@@ -206,55 +204,55 @@ export class Connection {
       default:
         break;
     }
-  } 
+  }
 
   /**
    * Send data to socket
    *
-   * @param {Buffer} data Data to send
+   * @param {Buffer} outgoingBuffer Buffer to send through the socket
    */
-  send(data: Buffer): boolean {
-    if (this.closing || this.closed) {
+  send(outgoingBuffer: Buffer): boolean {
+    if (this.isClosing || this.isClosed) {
       return false;
     }
-    if (this.pending() + data.length > this.bytes) {
-      this.processError(new Error(`outbound queue limit exceeded (${this.bytes} bytes)`));
+    if (this.getPendingByteCount() + outgoingBuffer.length > this.maxSendBytes) {
+      this.failConnection(new Error(`outbound queue limit exceeded: ${this.maxSendBytes}`));
       return false;
     }
-    this.outgoing.push(data);
-    this.outgone += data.length;
+    this.outgoing.push(outgoingBuffer);
+    this.outgoingBytes += outgoingBuffer.length;
     this.flush();
-    return !this.closed;
+    return !this.isClosed;
   }
 
   /**
    * Validate maximum send queue bytes
    *
-   * @param {number} value Value to validate
+   * @param {number} maxSendBytes Maximum queued bytes to validate
    * @returns {boolean} True if valid, false otherwise
    */
-  static validate = (value: number): boolean => {
-    return Number.isSafeInteger(value) && value > 0;
-  };   
+  static validate = (maxSendBytes: number): boolean => {
+    return Number.isSafeInteger(maxSendBytes) && maxSendBytes > 0;
+  };
 
   /**
    * Get the number of pending bytes in the send queue and socket buffer
    *
    * @returns {number} Number of pending bytes
    */
-  private pending(): number {
-    const size = this.type === TransportType.TCP ? (this.socket as Socket).writableLength : (this.socket as WebSocket).bufferedAmount;
-    return size + this.outgone;
-  }  
+  private getPendingByteCount(): number {
+    const pendingSocketBytes = this.transportType === TransportType.TCP ? (this.socket as Socket).writableLength : (this.socket as WebSocket).bufferedAmount;
+    return pendingSocketBytes + this.outgoingBytes;
+  }
 
   /**
    * Flush the outgoing data to the socket
    */
   private flush(): void {
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
-    if (this.type === TransportType.TCP) {
+    if (this.transportType === TransportType.TCP) {
       this.flushTCP();
     } else {
       this.flushWebSocket();
@@ -265,20 +263,20 @@ export class Connection {
    * Flush the outgoing data to the TCP socket
    */
   private flushTCP(): void {
-    const socket = this.socket as Socket;
-    while (!this.blocked && this.outgoing.length > 0 && !this.closed) {
-      const data = this.outgoing.shift()!;
-      this.outgone -= data.length;
+    const tcpSocket = this.socket as Socket;
+    while (!this.isBlocked && this.outgoing.length > 0 && !this.isClosed) {
+      const outgoingBuffer = this.outgoing.shift()!;
+      this.outgoingBytes -= outgoingBuffer.length;
       try {
-        if (!socket.write(data)) {
-          this.blocked = true;
+        if (!tcpSocket.write(outgoingBuffer)) {
+          this.isBlocked = true;
         }
       } catch (error) {
-        this.processError(error instanceof Error ? error : new Error(String(error)));
+        this.failConnection(error instanceof Error ? error : new Error(String(error)));
       }
     }
-    if (this.closing && !this.blocked && this.outgoing.length === 0 && !socket.writableEnded && !this.closed) {
-      socket.end();
+    if (this.isClosing && !this.isBlocked && this.outgoing.length === 0 && !tcpSocket.writableEnded && !this.isClosed) {
+      tcpSocket.end();
     }
   }
 
@@ -286,30 +284,30 @@ export class Connection {
    * Flush the outgoing data to the WebSocket
    */
   private flushWebSocket(): void {
-    if (this.sending || this.closed) {
+    if (this.isSending || this.isClosed) {
       return;
     }
-    const data = this.outgoing.shift();
-    if (!data) {
-      if (this.closing) {
+    const outgoingBuffer = this.outgoing.shift();
+    if (!outgoingBuffer) {
+      if (this.isClosing) {
         (this.socket as WebSocket).close(WebSocketCloseCode.Normal);
       }
       return;
     }
-    this.outgone -= data.length;
-    this.sending = true;
+    this.outgoingBytes -= outgoingBuffer.length;
+    this.isSending = true;
     try {
-      (this.socket as WebSocket).send(data, (error?: Error) => {
-        this.sending = false;
+      (this.socket as WebSocket).send(outgoingBuffer, (error?: Error) => {
+        this.isSending = false;
         if (error) {
-          this.processError(error);
+          this.failConnection(error);
         } else {
           this.flushWebSocket();
         }
       });
     } catch (error) {
-      this.sending = false;
-      this.processError(error instanceof Error ? error : new Error(String(error)));
+      this.isSending = false;
+      this.failConnection(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -318,14 +316,14 @@ export class Connection {
    *
    * @param error The error that occurred during the send operation
    */
-  private processError(error: Error): void {
-    if (this.closed) {
+  private failConnection(error: Error): void {
+    if (this.isClosed) {
       return;
     }
-    this.closed = true;
+    this.isClosed = true;
     this.outgoing = [];
-    this.outgone = 0;
-    if (this.type === TransportType.TCP) {
+    this.outgoingBytes = 0;
+    if (this.transportType === TransportType.TCP) {
       (this.socket as Socket).destroy();
     } else {
       (this.socket as WebSocket).terminate();
@@ -335,17 +333,17 @@ export class Connection {
 
   /**
    * Handle the socket error event
-   * 
+   *
    * @param error The error that occurred on the socket
    */
   private onSocketError(error: Error): void {
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
-    this.closed = true;
+    this.isClosed = true;
     this.outgoing = [];
-    this.outgone = 0;
-    if (this.type === TransportType.TCP) {
+    this.outgoingBytes = 0;
+    if (this.transportType === TransportType.TCP) {
       (this.socket as Socket).destroy();
     } else {
       (this.socket as WebSocket).terminate();
@@ -357,12 +355,12 @@ export class Connection {
    * Handle the socket close event
    */
   private onSocketClose(): void {
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
-    this.closed = true;
+    this.isClosed = true;
     this.outgoing = [];
-    this.outgone = 0;
+    this.outgoingBytes = 0;
     this.onClose();
   }
 }

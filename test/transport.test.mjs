@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import net from 'node:net';
 import { test } from 'node:test';
-import { Block, BlockType, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from '../dist/Block.js';
-import { Protocol } from '../dist/Protocol.js';
-import { Server } from '../dist/Server.js';
-import { Transport, TransportType } from '../dist/Transport.js';
+import { Block, BlockType, DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE } from '../dist/block.js';
+import { Protocol } from '../dist/protocol.js';
+import { Server } from '../dist/server.js';
+import { Transport, TransportType } from '../dist/transport.js';
 
 function createConnection() {
   return {
@@ -147,16 +147,16 @@ test('rejects connections above the pending handshake limit', async () => {
     first = net.createConnection(port, '127.0.0.1');
     await once(first, 'connect');
     await accepted;
-    assert.equal(server.pendings.size, 1);
+    assert.equal(server.pendingHandshakes.size, 1);
 
     second = net.createConnection(port, '127.0.0.1');
     await once(second, 'connect');
     await once(second, 'close');
-    assert.equal(server.pendings.size, 1);
+    assert.equal(server.pendingHandshakes.size, 1);
 
     first.destroy();
     await once(first, 'close');
-    assert.equal(server.pendings.size, 0);
+    assert.equal(server.pendingHandshakes.size, 0);
 
     const closed = once(server.server, 'close');
     await server.stop();

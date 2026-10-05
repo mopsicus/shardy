@@ -1,15 +1,15 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { Socket, Server as SocketServer } from 'net';
-import { Logger, LoggerFilter, LoggerScope } from './Logger';
-import { Tools } from './Tools';
-import { Service, ServiceOptions } from './Service';
-import { Client } from './Client';
-import { TransportType } from './Transport';
-import { Connection, DEFAULT_SEND_BYTES } from './Connection';
-import { DisconnectReason } from './Commander';
-import { Extension, ExtensionMode } from './Extension';
-import { Block, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
+import { Logger, LoggerFilter, LoggerScope } from './logger';
+import { Tools } from './tools';
+import { Service, ServiceOptions } from './service';
+import { Client } from './client';
+import { TransportType } from './transport';
+import { Connection, DEFAULT_SEND_BYTES } from './connection';
+import { DisconnectReason } from './commander';
+import { Extension, ExtensionMode } from './extension';
+import { Block, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './block';
 import http from 'http';
 import { once } from 'events';
 
@@ -21,7 +21,7 @@ const ID_LENGTH = 10;
 /**
  * Default maximum pending handshakes
  */
-const MAX_PENDINGS = 64;
+const MAX_PENDING_HANDSHAKES = 64;
 
 /**
  * Event for new connection
@@ -77,53 +77,53 @@ export class Server {
   private server: ServerType;
 
   /**
-   * List of connected
+   * Connected clients indexed by connection ID
    *
    * @type {Map<string, Client>}
    */
-  private list: Map<string, Client> = new Map<string, Client>();
+  private clients: Map<string, Client> = new Map<string, Client>();
 
   /**
    * Pending handshakes set
    *
    * @type {Set<string>}
    */
-  private pendings: Set<string> = new Set<string>();
+  private pendingHandshakes: Set<string> = new Set<string>();
 
   /**
    * Maximum number of pending handshakes
    *
    * @type {number}
    */
-  private limit: number;
+  private maxPendingHandshakes: number;
 
   /**
    * Client lifecycles map
    *
    * @type {Map<string, Promise<void>>}
    */
-  private lifecycles: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+  private clientLifecycles: Map<string, Promise<void>> = new Map<string, Promise<void>>();
 
   /**
    * Disconnecting clients set
    *
    * @type {Set<string>}
    */
-  private disconnecting: Set<string> = new Set<string>();
+  private disconnectingClients: Set<string> = new Set<string>();
 
   /**
    * Server stop lifecycle promise
    *
    * @type {Promise<void>}
    */
-  private stopAction?: Promise<void>;
+  private stopPromise?: Promise<void>;
 
   /**
    * Server close lifecycle promise
    *
    * @type {Promise<void>}
    */
-  private closeAction: Promise<void> = Promise.resolve();
+  private closeLifecyclePromise: Promise<void> = Promise.resolve();
 
   /**
    * Extensions array (before)
@@ -145,7 +145,7 @@ export class Server {
    * @private
    * @type {http.Server}
    */
-  private http: http.Server;
+  private httpServer: http.Server;
 
   /**
    * Creates an instance of Server
@@ -161,9 +161,9 @@ export class Server {
     private service: Service,
     private options: ServiceOptions,
   ) {
-    this.limit = this.options.pendings ?? MAX_PENDINGS;
-    this.http = http.createServer();
-    this.server = this.service.transport === TransportType.TCP ? new SocketServer() : new WebSocketServer({ server: this.http });
+    this.maxPendingHandshakes = this.options.pendings ?? MAX_PENDING_HANDSHAKES;
+    this.httpServer = http.createServer();
+    this.server = this.service.transport === TransportType.TCP ? new SocketServer() : new WebSocketServer({ server: this.httpServer });
     if (!Block.validate(this.options.block ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
@@ -172,11 +172,11 @@ export class Server {
       this.log.error('max send bytes must be a positive safe integer', LoggerScope.System);
       return;
     }
-    this.server.on(CONNECTION_EVENT, (socket: SocketType, message: IncomingMessage) => this.onConnect(socket, message));
+    this.server.on(CONNECTION_EVENT, (socket: SocketType, handshakeRequest: IncomingMessage) => this.onConnect(socket, handshakeRequest));
     this.server.on(LISTENING_EVENT, () => this.onListening());
     this.server.on(ERROR_EVENT, (error: Error) => this.onError(error));
     this.server.on(CLOSE_EVENT, () => {
-      this.closeAction = this.onClose();
+      this.closeLifecyclePromise = this.onClose();
     });
   }
 
@@ -190,7 +190,7 @@ export class Server {
         (this.server as SocketServer).listen(this.port, this.host);
         break;
       case TransportType.WebSocket:
-        this.http.listen(this.port, this.host);
+        this.httpServer.listen(this.port, this.host);
       default:
         break;
     }
@@ -200,46 +200,46 @@ export class Server {
    * Stop server
    */
   async stop(): Promise<void> {
-    if (!this.stopAction) {
-      this.stopAction = this.stopInner();
+    if (!this.stopPromise) {
+      this.stopPromise = this.shutdownServer();
     }
-    return this.stopAction;
+    return this.stopPromise;
   }
 
   /**
-   * Stop server internal method
+   * Stop the server and wait for client cleanup
    *
    * @private
    * @returns {Promise<void>}
    */
-  private async stopInner(): Promise<void> {
+  private async shutdownServer(): Promise<void> {
     this.log.info(`stop`, LoggerScope.System);
-    this.list.forEach((client: Client) => {
+    this.clients.forEach((client: Client) => {
       client.kick(DisconnectReason.ServerDown);
     });
     switch (this.service.transport) {
       case TransportType.TCP:
         if ((this.server as SocketServer).listening) {
-          const closed = once(this.server, CLOSE_EVENT);
+          const serverClosePromise = once(this.server, CLOSE_EVENT);
           (this.server as SocketServer).close();
-          await closed;
+          await serverClosePromise;
         }
         break;
       case TransportType.WebSocket:
         {
-          const closed = once(this.server, CLOSE_EVENT);
+          const serverClosePromise = once(this.server, CLOSE_EVENT);
           (this.server as WebSocketServer).close();
-          if (this.http.listening) {
-            this.http.close();
+          if (this.httpServer.listening) {
+            this.httpServer.close();
           }
-          await closed;
+          await serverClosePromise;
         }
         break;
       default:
         break;
     }
-    await Promise.all(this.lifecycles.values());
-    await this.closeAction;
+    await Promise.all(this.clientLifecycles.values());
+    await this.closeLifecyclePromise;
     await this.log.destroy();
   }
 
@@ -250,14 +250,14 @@ export class Server {
    */
   async use(extension: Extension): Promise<void> {
     if (extension.mode === ExtensionMode.Before) {
-      const index = this.extensionsBefore.indexOf(extension, 0);
-      if (index < 0) {
+      const extensionIndex = this.extensionsBefore.indexOf(extension, 0);
+      if (extensionIndex < 0) {
         await extension.init();
         this.extensionsBefore.push(extension);
       }
     } else {
-      const index = this.extensionsAfter.indexOf(extension, 0);
-      if (index < 0) {
+      const extensionIndex = this.extensionsAfter.indexOf(extension, 0);
+      if (extensionIndex < 0) {
         await extension.init();
         this.extensionsAfter.push(extension);
       }
@@ -272,7 +272,7 @@ export class Server {
    */
   async setFilter(filter: LoggerFilter): Promise<void> {
     this.log.setFilter(filter);
-    this.list.forEach((client: Client) => {
+    this.clients.forEach((client: Client) => {
       client.log.setFilter(filter);
     });
     this.extensionsBefore.forEach((extension: Extension) => {
@@ -288,7 +288,7 @@ export class Server {
    */
   async clearFilter(): Promise<void> {
     this.log.clearFilter();
-    this.list.forEach((client: Client) => {
+    this.clients.forEach((client: Client) => {
       client.log.clearFilter();
     });
     this.extensionsBefore.forEach((extension: Extension) => {
@@ -303,12 +303,12 @@ export class Server {
    * Event when client connected to server
    *
    * @private
-   * @param {SocketType} socket Connected instance for server
-   * @param {IncomingMessage} message Incoming message for websockets
+   * @param {SocketType} socket Connected socket
+   * @param {IncomingMessage} handshakeRequest Incoming HTTP request for WebSocket connections
    */
-  private onConnect(socket: SocketType, message: IncomingMessage): void {
-    if (this.pendings.size >= this.limit) {
-      this.log.warn(`pendings limit reached: ${this.limit}`, LoggerScope.System);
+  private onConnect(socket: SocketType, handshakeRequest: IncomingMessage): void {
+    if (this.pendingHandshakes.size >= this.maxPendingHandshakes) {
+      this.log.warn(`pendings limit reached: ${this.maxPendingHandshakes}`, LoggerScope.System);
       if (this.service.transport === TransportType.TCP) {
         (socket as Socket).destroy();
       } else {
@@ -316,29 +316,23 @@ export class Server {
       }
       return;
     }
-    const ip = message ? message.socket.remoteAddress! : (socket as Socket).remoteAddress!;
-    const id = Tools.generateId(ID_LENGTH);
-    const logger = new Logger([id, ip]);
-    logger.setFilter(this.log.getFilter());
-    const client = new Client(
-      new Connection(socket, this.service.transport, this.options.bytes),
-      id,
-      logger,
-      this.service,
-      this.options,
-    );
-    client.onDisconnect = (id: string, reason: DisconnectReason) => this.onDisconnect(id, reason);
+    const remoteAddress = handshakeRequest ? handshakeRequest.socket.remoteAddress! : (socket as Socket).remoteAddress!;
+    const connectionId = Tools.generateId(ID_LENGTH);
+    const clientLogger = new Logger([connectionId, remoteAddress]);
+    clientLogger.setFilter(this.log.getFilter());
+    const client = new Client(new Connection(socket, this.service.transport, this.options.bytes), connectionId, clientLogger, this.service, this.options);
+    client.onDisconnect = (disconnectedClientId: string, reason: DisconnectReason) => this.onDisconnect(disconnectedClientId, reason);
     client.onReady = () => this.onReady(client);
-    this.list.set(id, client);
-    this.pendings.add(id);
-    this.addHooks(
-      id,
+    this.clients.set(connectionId, client);
+    this.pendingHandshakes.add(connectionId);
+    this.scheduleLifecycleHooks(
+      connectionId,
       this.extensionsBefore
         .map((item) => () => item.onClientConnect(client))
         .concat([() => this.service.onConnect(client)])
         .concat(this.extensionsAfter.map((item) => () => item.onClientConnect(client))),
     );
-    this.log.info(`connected ${id}|${ip}`, LoggerScope.Debug);
+    this.log.info(`connected ${connectionId}|${remoteAddress}`, LoggerScope.Debug);
   }
 
   /**
@@ -347,11 +341,11 @@ export class Server {
    * @private
    */
   private async onListening(): Promise<void> {
-    const hooks = this.extensionsBefore.map((item) => () => item.onServiceListening());
-    hooks.push(() => this.service.onListening(this.host, this.port));
-    hooks.push(...this.extensionsAfter.map((item) => () => item.onServiceListening()));
+    const lifecycleHooks = this.extensionsBefore.map((extension) => () => extension.onServiceListening());
+    lifecycleHooks.push(() => this.service.onListening(this.host, this.port));
+    lifecycleHooks.push(...this.extensionsAfter.map((extension) => () => extension.onServiceListening()));
     this.log.info(`listening on ${this.host}:${this.port}`, LoggerScope.System);
-    await this.processHooks(hooks);
+    await this.runLifecycleHooks(lifecycleHooks);
   }
 
   /**
@@ -361,7 +355,7 @@ export class Server {
    */
   private onError(error: Error): void {
     this.log.error(`error: ${error}`, LoggerScope.System);
-    void this.processHooks([() => this.service.onError(error)]);
+    void this.runLifecycleHooks([() => this.service.onError(error)]);
   }
 
   /**
@@ -370,11 +364,11 @@ export class Server {
    * @private
    */
   private async onClose(): Promise<void> {
-    const hooks = this.extensionsBefore.map((item) => () => item.onServiceClose());
-    hooks.push(() => this.service.onClose());
-    hooks.push(...this.extensionsAfter.map((item) => () => item.onServiceClose()));
+    const lifecycleHooks = this.extensionsBefore.map((extension) => () => extension.onServiceClose());
+    lifecycleHooks.push(() => this.service.onClose());
+    lifecycleHooks.push(...this.extensionsAfter.map((extension) => () => extension.onServiceClose()));
     this.log.info(`closed`, LoggerScope.System);
-    await this.processHooks(hooks);
+    await this.runLifecycleHooks(lifecycleHooks);
   }
 
   /**
@@ -384,8 +378,8 @@ export class Server {
    * @param {Client} client Client instance
    */
   private onReady(client: Client): void {
-    this.pendings.delete(client.id);
-    this.addHooks(
+    this.pendingHandshakes.delete(client.id);
+    this.scheduleLifecycleHooks(
       client.id,
       this.extensionsBefore
         .map((item) => () => item.onClientReady(client))
@@ -398,62 +392,62 @@ export class Server {
    * Event when client disconnected
    *
    * @private
-   * @param {string} id Client connection id
+   * @param {string} connectionId Client connection ID
    * @param {DisconnectReason} reason Reason for disconnect
    */
-  private onDisconnect(id: string, reason: DisconnectReason): void {
-    this.pendings.delete(id);
-    const client = this.list.get(id);
-    if (!client || this.disconnecting.has(id)) {
+  private onDisconnect(connectionId: string, reason: DisconnectReason): void {
+    this.pendingHandshakes.delete(connectionId);
+    const client = this.clients.get(connectionId);
+    if (!client || this.disconnectingClients.has(connectionId)) {
       return;
     }
-    this.disconnecting.add(id);
-    const hooks = this.extensionsBefore.map((item) => () => item.onClientDisconnect(client, reason));
-    hooks.push(() => this.service.onDisconnect(client, reason));
-    hooks.push(...this.extensionsAfter.map((item) => () => item.onClientDisconnect(client, reason)));
-    const previous = this.lifecycles.get(id) ?? Promise.resolve();
-    const lifecycle = previous.then(async () => {
-      await this.processHooks(hooks);
+    this.disconnectingClients.add(connectionId);
+    const lifecycleHooks = this.extensionsBefore.map((extension) => () => extension.onClientDisconnect(client, reason));
+    lifecycleHooks.push(() => this.service.onDisconnect(client, reason));
+    lifecycleHooks.push(...this.extensionsAfter.map((extension) => () => extension.onClientDisconnect(client, reason)));
+    const previousLifecycle = this.clientLifecycles.get(connectionId) ?? Promise.resolve();
+    const clientLifecycle = previousLifecycle.then(async () => {
+      await this.runLifecycleHooks(lifecycleHooks);
       try {
         await client.destroy();
       } catch (error) {
         this.log.error(`disconnect cleanup failed: ${error}`, LoggerScope.System);
       }
-      this.list.delete(id);
-      this.lifecycles.delete(id);
-      this.disconnecting.delete(id);
-      this.log.info(`disconnected ${id}`, LoggerScope.Debug);
+      this.clients.delete(connectionId);
+      this.clientLifecycles.delete(connectionId);
+      this.disconnectingClients.delete(connectionId);
+      this.log.info(`disconnected ${connectionId}`, LoggerScope.Debug);
     });
-    this.lifecycles.set(id, lifecycle);
-    void lifecycle.catch((error) => this.log.error(`disconnect lifecycle failed: ${error}`, LoggerScope.System));
+    this.clientLifecycles.set(connectionId, clientLifecycle);
+    void clientLifecycle.catch((error) => this.log.error(`disconnect lifecycle failed: ${error}`, LoggerScope.System));
   }
 
   /**
    * Add lifecycle hooks for a client
    *
    * @private
-   * @param {string} id Client connection id
-   * @param {Array<() => Promise<void>>} hooks Array of lifecycle hooks
+   * @param {string} connectionId Client connection ID
+   * @param {Array<() => Promise<void>>} lifecycleHooks Client lifecycle hooks
    */
-  private addHooks(id: string, hooks: Array<() => Promise<void>>): void {
-    const previous = this.lifecycles.get(id) ?? Promise.resolve();
-    const lifecycle = previous.then(() => this.processHooks(hooks));
-    this.lifecycles.set(id, lifecycle);
-    void lifecycle.catch((error) => this.log.error(`lifecycle failed: ${error}`, LoggerScope.System));
+  private scheduleLifecycleHooks(connectionId: string, lifecycleHooks: Array<() => Promise<void>>): void {
+    const previousLifecycle = this.clientLifecycles.get(connectionId) ?? Promise.resolve();
+    const clientLifecycle = previousLifecycle.then(() => this.runLifecycleHooks(lifecycleHooks));
+    this.clientLifecycles.set(connectionId, clientLifecycle);
+    void clientLifecycle.catch((error) => this.log.error(`lifecycle failed: ${error}`, LoggerScope.System));
   }
 
   /**
    * Process an array of lifecycle hooks
    *
    * @private
-   * @param {Array<() => Promise<void>>} hooks Array of lifecycle hooks
+   * @param {Array<() => Promise<void>>} lifecycleHooks Lifecycle hooks to run
    */
-  private async processHooks(hooks: Array<() => Promise<void>>): Promise<void> {
-    for (const hook of hooks) {
+  private async runLifecycleHooks(lifecycleHooks: Array<() => Promise<void>>): Promise<void> {
+    for (const lifecycleHook of lifecycleHooks) {
       try {
-        await hook();
+        await lifecycleHook();
       } catch (error) {
-        this.log.error(`process hooks failed: ${error}`, LoggerScope.System);
+        this.log.error(`lifecycle hook failed: ${error}`, LoggerScope.System);
       }
     }
   }

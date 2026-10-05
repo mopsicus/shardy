@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Server } from '../dist/Server.js';
-import { TransportType } from '../dist/Transport.js';
-import { DisconnectReason } from '../dist/Commander.js';
+import { Server } from '../dist/server.js';
+import { TransportType } from '../dist/transport.js';
+import { DisconnectReason } from '../dist/commander.js';
 
 function createServer(service = {}) {
   const originalEnvironment = {
@@ -83,8 +83,8 @@ test('runs disconnect cleanup once and removes the client after hooks finish', a
       trace.push('destroy');
     },
   };
-  server.list.set(client.id, client);
-  server.pendings.add(client.id);
+  server.clients.set(client.id, client);
+  server.pendingHandshakes.add(client.id);
   server.extensionsBefore.push({
     async onClientDisconnect() {
       trace.push('before');
@@ -99,12 +99,12 @@ test('runs disconnect cleanup once and removes the client after hooks finish', a
   try {
     server.onDisconnect(client.id, DisconnectReason.Normal);
     server.onDisconnect(client.id, DisconnectReason.Normal);
-    await server.lifecycles.get(client.id);
+    await server.clientLifecycles.get(client.id);
 
     assert.deepEqual(trace, ['before', 'service', 'after', 'destroy']);
     assert.equal(destroys, 1);
-    assert.equal(server.list.has(client.id), false);
-    assert.equal(server.pendings.has(client.id), false);
+    assert.equal(server.clients.has(client.id), false);
+    assert.equal(server.pendingHandshakes.has(client.id), false);
   } finally {
     await restore();
   }

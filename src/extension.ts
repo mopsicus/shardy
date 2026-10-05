@@ -1,6 +1,6 @@
-import { Client } from './Client';
-import { DisconnectReason } from './Commander';
-import { Logger } from './Logger';
+import { Client } from './client';
+import { DisconnectReason } from './commander';
+import { Logger } from './logger';
 
 /**
  * Mode for extension processing order

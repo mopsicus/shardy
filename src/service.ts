@@ -1,8 +1,8 @@
-import { Client } from './Client';
-import { DisconnectReason, Task } from './Commander';
-import { Validator } from './Validator';
-import { TransportType } from './Transport';
-import { Serializer } from './Serializer';
+import { Client } from './client';
+import { CommandHandler, DisconnectReason } from './commander';
+import { Validator } from './validator';
+import { TransportType } from './transport';
+import { Serializer } from './serializer';
 
 /**
  * Service options to pass in Commander
@@ -12,9 +12,9 @@ import { Serializer } from './Serializer';
  */
 export interface ServiceOptions {
   /**
-   * List of available service commads and requests
+   * List of available service commands and requests
    */
-  commands?: Map<string, Task>;
+  commands?: Map<string, CommandHandler>;
 
   /**
    * Maximum block body size in bytes
@@ -28,7 +28,7 @@ export interface ServiceOptions {
    */
   pendings?: number;
 
-  /** 
+  /**
    * Maximum buffered outbound bytes per connection
    * Defaults to 4 MiB
    */

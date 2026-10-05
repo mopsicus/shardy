@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { Logger, LoggerType } from '../dist/Logger.js';
+import { Logger, LoggerType } from '../dist/logger.js';
 
 test('shares Winston transports while keeping filters and labels scoped', async () => {
   const previousEnvironment = process.env.ENV;

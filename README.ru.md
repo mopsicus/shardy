@@ -119,13 +119,13 @@ Shardy API удобен в использовании, он предоставл
 Запрос:
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // отправка запроса и получение ответа с данными
 });
 ```
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // отправка запроса с данными
 }, payload);
 ```
@@ -143,7 +143,7 @@ client.command('status', payload); // отправка команды с дан�
 Подписка:
 
 ```ts
-client.on('status', (data) => {
+client.on('status', (payload) => {
 // подписка на команду и обработка при каждом получении
 });
 ```
@@ -194,7 +194,7 @@ export const status = (commander: Commander, payload: PayloadData, service: Serv
 
 Если в вашей реализации нет необходимости делать двухэтапное рукопожатие, вы можете установить "заглушки" на этих методах.
 
-Shardy предоставляет интерфейс для валидации рукопожатия. Вы можете реализовать собственную структуру данных рукопожатия и валидацию для всех этих этапов. Наследуйте класс `Validator`, реализуйте методы и передайте его своему сервису и клиенту.
+Shardy предоставляет интерфейс для валидации рукопожатия. Вы можете реализовать собственную структуру данных рукопожатия и валидацию для всех этих этапов. Реализуйте интерфейс `Validator` и передайте эту реализацию сервису и клиенту.
 
 ```ts
 import { Validator, ValidatorState } from 'shardy';
@@ -227,7 +227,7 @@ export class MyHandshake implements Validator {
 
 Shardy поддерживает пользовательскую сериализацию передаваемых данных. Вы можете использовать JSON, MessagePack, Protobuf, FlatBuffers и т.д. или свой собственный сериализатор.
 
-Достаточно наследовать класс `Serializer`, реализовать методы encode/decode и передать его своему сервису и клиенту.
+Реализуйте интерфейс `Serializer`, предоставьте методы `encode` и `decode` и передайте эту реализацию сервису и клиенту.
 
 ```ts
 import { PayloadData, Serializer } from 'shardy';
@@ -250,7 +250,7 @@ export class MyJsonSerializer implements Serializer {
 
 ### Расширения
 
-Вы можете улучшить свои Shardy-сервисы с помощью расширений. Достаточно наследовать класс `Extension`, реализовать необходимые методы и выбрать режим `ExtensionMode` для обработки: использовать расширение до методов сервиса или после, подключить их до старта сервера.
+Вы можете улучшить свои Shardy-сервисы с помощью расширений. Реализуйте интерфейс `Extension`, выберите режим `ExtensionMode` для вызова до или после методов сервиса и зарегистрируйте расширение до запуска сервера.
 
 ```ts
 const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, service, { validator, serializer, commands });

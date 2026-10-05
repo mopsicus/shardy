@@ -1,12 +1,12 @@
-import { BlockData, BlockType } from './Block';
-import { Payload, PayloadData, PayloadType } from './Payload';
-import { Protocol } from './Protocol';
-import { Logger, LoggerScope } from './Logger';
-import { Tools } from './Tools';
-import { Pulse } from './Pulse';
-import { ValidatorState } from './Validator';
-import { Service, ServiceOptions } from './Service';
-import { Connection } from './Connection';
+import { BlockData, BlockType } from './block';
+import { Payload, PayloadData, PayloadType } from './payload';
+import { Protocol } from './protocol';
+import { Logger, LoggerScope } from './logger';
+import { Tools } from './tools';
+import { Pulse } from './pulse';
+import { ValidatorState } from './validator';
+import { Service, ServiceOptions } from './service';
+import { Connection } from './connection';
 
 /**
  * Tag for logs
@@ -24,14 +24,14 @@ const TIMEOUT_INTERVAL = 1000;
 const TIMEOUT_ERROR = 'timeout';
 
 /**
- * Type for loaded commands and requests
+ * Handler for commands and requests loaded by a service
  */
-export type Task = (commander: Commander, payload: PayloadData, service: Service) => void | Promise<void>;
+export type CommandHandler = (commander: Commander, payload: PayloadData, service: Service) => void | Promise<void>;
 
 /**
- * Type for requests callbacks
+ * Handler invoked with a response payload
  */
-export type ResponseType = (data: PayloadData) => void | Promise<void>;
+export type ResponseCallback = (payload: PayloadData) => void | Promise<void>;
 
 /**
  * Mode for commander
@@ -108,7 +108,7 @@ export class Commander {
    * @private
    * @type {number}
    */
-  private counter: number = 1;
+  private requestIdCounter: number = 1;
 
   /**
    * Pulse instance
@@ -121,44 +121,44 @@ export class Commander {
   /**
    * List of callbacks for commands
    *
-   * @type {Map<string, Array<ResponseType>>}
+   * @type {Map<string, Array<ResponseCallback>>}
    */
-  private commands: Map<string, Array<ResponseType>> = new Map<string, Array<ResponseType>>();
+  private commandHandlers: Map<string, Array<ResponseCallback>> = new Map<string, Array<ResponseCallback>>();
 
   /**
    * List of callbacks for requests
    *
-   * @type {Map<number, ResponseType>}
+   * @type {Map<number, ResponseCallback>}
    */
-  private callbacks: Map<number, ResponseType> = new Map<number, ResponseType>();
+  private responseCallbacks: Map<number, ResponseCallback> = new Map<number, ResponseCallback>();
 
   /**
    * List of reject callbacks for requests
    *
    * @type {Map<number, (error: Error) => void>}
    */
-  private rejects: Map<number, (error: Error) => void> = new Map<number, (error: Error) => void>();
+  private requestRejectors: Map<number, (error: Error) => void> = new Map<number, (error: Error) => void>();
 
   /**
    * List of callbacks for requests for bot
    *
-   * @type {Map<string, ResponseType>}
+   * @type {Map<string, ResponseCallback>}
    */
-  private requests: Map<string, ResponseType> = new Map<string, ResponseType>();
+  private requestHandlers: Map<string, ResponseCallback> = new Map<string, ResponseCallback>();
 
   /**
    * List of timeouts callbacks for requests
    *
    * @type {Map<number, number>}
    */
-  private timeouts: Map<number, number> = new Map<number, number>();
+  private requestStartTimes: Map<number, number> = new Map<number, number>();
 
   /**
    * List of requests names
    *
    * @type {Map<number, string>}
    */
-  private names: Map<number, string> = new Map<number, string>();
+  private requestNames: Map<number, string> = new Map<number, string>();
 
   /**
    * Requests timeout timer
@@ -166,7 +166,15 @@ export class Commander {
    * @private
    * @type {NodeJS.Timeout}
    */
-  private timer: NodeJS.Timeout;
+  private requestTimeoutTimer: NodeJS.Timeout;
+
+  /**
+   * Unique identifier for the commander instance
+   *
+   * @private
+   * @type {string}
+   */
+  private id: string;
 
   /**
    * Protocol instance
@@ -190,12 +198,12 @@ export class Commander {
    * @private
    * @type {boolean}
    */
-  private closed: boolean = false;
+  private isClosed: boolean = false;
 
   /**
    * Creates an instance of Commander
    *
-   * @param {string} id Connection ID
+   * @param {string} connectionId Connection ID
    * @param {Connection} connection Client connection
    * @param {Service} service Service instance
    * @param {ServiceOptions} options Service options: validator, commands, serializer, etc
@@ -203,21 +211,22 @@ export class Commander {
    * @param {CommanderMode} [mode=CommanderMode.Service] mode Commander mode for service or bot
    */
   constructor(
-    private id: string,
+    connectionId: string,
     private connection: Connection,
     private service: Service,
     private options: ServiceOptions,
     private log: Logger,
     private mode: CommanderMode = CommanderMode.Service,
   ) {
+    this.id = connectionId;
     this.cid = this.id;
     this.protocol = new Protocol(this.connection, this.log, this.options.block);
     this.protocol.onBlock = (block: BlockData) => this.onBlock(block);
     this.protocol.onDisconnect = () => this.onClose();
     this.pulse = new Pulse(mode);
     this.pulse.onPulse = () => this.onPulse();
-    this.timer = setInterval(() => this.onCheckTimeout(), TIMEOUT_INTERVAL);
-    this.counter = 0;
+    this.requestTimeoutTimer = setInterval(() => this.onCheckTimeout(), TIMEOUT_INTERVAL);
+    this.requestIdCounter = 0;
   }
 
   /**
@@ -242,20 +251,20 @@ export class Commander {
 
   /**
    * Send handshake
-   * @param {Buffer} data Data to send
+   * @param {Buffer} handshakePayload Handshake payload bytes
    */
-  handshake(data: Buffer): void {
+  handshake(handshakePayload: Buffer): void {
     this.log.info(`-> handshake`, LoggerScope.Debug);
-    this.protocol.handshake(data);
+    this.protocol.handshake(handshakePayload);
   }
 
   /**
    * Send acknowledge
-   * @param {Buffer} data Data to send
+   * @param {Buffer} acknowledgementPayload Acknowledgement payload bytes
    */
-  acknowledge(data: Buffer): void {
+  acknowledge(acknowledgementPayload: Buffer): void {
     this.log.info(`-> acknowledge`, LoggerScope.Debug);
-    this.protocol.acknowledge(data);
+    this.protocol.acknowledge(acknowledgementPayload);
   }
 
   /**
@@ -269,85 +278,85 @@ export class Commander {
   /**
    * Send command (event) to server
    *
-   * @param {string} command Command name
-   * @param {Buffer} [data] Payload data
+   * @param {string} commandName Command name
+   * @param {Buffer} [commandPayload] Command payload bytes
    */
-  command(command: string, data?: Buffer): void {
-    this.log.info(`-> command: ${command}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Command, command, 0, data);
+  command(commandName: string, commandPayload?: Buffer): void {
+    this.log.info(`-> command: ${commandName}, data: ${commandPayload}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Command, commandName, 0, commandPayload);
     this.protocol.send(payload);
   }
 
   /**
    * Send request to server and wait response
    *
-   * @param {string} request Request name
-   * @param {Buffer} [data] Payload data
+   * @param {string} requestName Request name
+   * @param {Buffer} [requestPayload] Request payload bytes
    */
-  fetch(request: string, data?: Buffer): Promise<PayloadData> {
-    const id = this.counter++;
-    this.log.info(`-> fetch: ${id}.${request}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, id, data);
-    const promise = new Promise<PayloadData>((resolve, reject) => {
-      this.callbacks.set(id, resolve);
-      this.rejects.set(id, reject);
-      this.names.set(id, request);
-      this.timeouts.set(id, Date.now());
+  fetch(requestName: string, requestPayload?: Buffer): Promise<PayloadData> {
+    const requestId = this.requestIdCounter++;
+    this.log.info(`-> fetch: ${requestId}.${requestName}, data: ${requestPayload}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Request, requestName, requestId, requestPayload);
+    const responsePromise = new Promise<PayloadData>((resolve, reject) => {
+      this.responseCallbacks.set(requestId, resolve);
+      this.requestRejectors.set(requestId, reject);
+      this.requestNames.set(requestId, requestName);
+      this.requestStartTimes.set(requestId, Date.now());
     });
     try {
       this.protocol.send(payload);
     } catch (error) {
-      this.cancelRequest(id);
+      this.cancelRequest(requestId);
       return Promise.reject(error);
     }
-    return promise;
+    return responsePromise;
   }
 
   /**
    * Send request to server and wait response in callback
    *
-   * @param {string} request Request name
-   * @param {ResponseType} callback Callback with response
-   * @param {Buffer} [data] Payload data
+   * @param {string} requestName Request name
+   * @param {ResponseCallback} responseCallback Callback with response
+   * @param {Buffer} [requestPayload] Request payload bytes
    */
-  request(request: string, callback: ResponseType, data?: Buffer): number {
-    const id = this.counter++;
-    this.log.info(`-> request: ${id}.${request}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Request, request, id, data);
-    this.callbacks.set(id, callback);
-    this.names.set(id, request);
-    this.timeouts.set(id, Date.now());
+  request(requestName: string, responseCallback: ResponseCallback, requestPayload?: Buffer): number {
+    const requestId = this.requestIdCounter++;
+    this.log.info(`-> request: ${requestId}.${requestName}, data: ${requestPayload}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Request, requestName, requestId, requestPayload);
+    this.responseCallbacks.set(requestId, responseCallback);
+    this.requestNames.set(requestId, requestName);
+    this.requestStartTimes.set(requestId, Date.now());
     try {
       this.protocol.send(payload);
     } catch (error) {
-      this.removeRequest(id);
+      this.removeRequest(requestId);
       throw error;
     }
-    return id;
+    return requestId;
   }
 
   /**
    * Send response on client request
    *
-   * @param {PayloadData} request Request from client with id, etc
-   * @param {Buffer} [data] Data to send
+   * @param {PayloadData} requestPayload Request received from the client
+   * @param {Buffer} [responsePayload] Response payload bytes
    */
-  response(request: PayloadData, data?: Buffer): void {
-    this.log.info(`-> response: ${request.id}.${request.name}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Response, request.name, request.id, data);
+  response(requestPayload: PayloadData, responsePayload?: Buffer): void {
+    this.log.info(`-> response: ${requestPayload.id}.${requestPayload.name}, data: ${responsePayload}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Response, requestPayload.name, requestPayload.id, responsePayload);
     this.protocol.send(payload);
   }
 
   /**
    * Send error on client request
    *
-   * @param {PayloadData} request Request from client with id, etc
-   * @param {string} error Error message or code
-   * @param {Buffer} [data] Data to send
+   * @param {PayloadData} requestPayload Request received from the client
+   * @param {string} errorMessage Error message or code
+   * @param {Buffer} [responsePayload] Response payload bytes
    */
-  error(request: PayloadData, error: string, data?: Buffer): void {
-    this.log.info(`-> error: ${request.id}.${request.name}, error: ${error}, data: ${data}`, LoggerScope.Debug);
-    const payload = Payload.encode(this.options.serializer, PayloadType.Response, request.name, request.id, data, error);
+  error(requestPayload: PayloadData, errorMessage: string, responsePayload?: Buffer): void {
+    this.log.info(`-> error: ${requestPayload.id}.${requestPayload.name}, error: ${errorMessage}, data: ${responsePayload}`, LoggerScope.Debug);
+    const payload = Payload.encode(this.options.serializer, PayloadType.Response, requestPayload.name, requestPayload.id, responsePayload, errorMessage);
     this.protocol.send(payload);
   }
 
@@ -355,28 +364,28 @@ export class Commander {
    * Clear all events
    */
   clear(): void {
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
-    this.closed = true;
-    clearInterval(this.timer);
+    this.isClosed = true;
+    clearInterval(this.requestTimeoutTimer);
     this.pulse.clear();
-    const pending = Array.from(this.callbacks.entries());
-    const rejects = new Map(this.rejects);
-    const names = new Map(this.names);
-    this.names.clear();
-    this.timeouts.clear();
-    this.commands.clear();
-    this.requests.clear();
-    this.callbacks.clear();
-    this.rejects.clear();
-    for (const [id, callback] of pending) {
-      const reject = rejects.get(id);
-      if (reject) {
-        reject(new Error('closed'));
+    const pendingResponses = Array.from(this.responseCallbacks.entries());
+    const requestRejectors = new Map(this.requestRejectors);
+    const requestNames = new Map(this.requestNames);
+    this.requestNames.clear();
+    this.requestStartTimes.clear();
+    this.commandHandlers.clear();
+    this.requestHandlers.clear();
+    this.responseCallbacks.clear();
+    this.requestRejectors.clear();
+    for (const [requestId, responseCallback] of pendingResponses) {
+      const rejectRequest = requestRejectors.get(requestId);
+      if (rejectRequest) {
+        rejectRequest(new Error('closed'));
       } else {
         try {
-          callback(Payload.create(PayloadType.Response, names.get(id) ?? '', id, undefined, 'closed'));
+          responseCallback(Payload.create(PayloadType.Response, requestNames.get(requestId) ?? '', requestId, undefined, 'closed'));
         } catch (error) {
           this.log.error(`[${LOG_TAG}] request callback failed: ${error}`, LoggerScope.Debug);
         }
@@ -387,14 +396,14 @@ export class Commander {
   /**
    * Invoke a task with the given payload
    *
-   * @param {Task} task Task to invoke
-   * @param {PayloadData} payload Payload data for the task
+   * @param {CommandHandler} commandHandler Handler to invoke
+   * @param {PayloadData} payload Command or request payload
    */
-  processTask(task: Task, payload: PayloadData): void {
+  processTask(commandHandler: CommandHandler, payload: PayloadData): void {
     try {
-      const result = task(this, payload, this.service);
-      if (result) {
-        void result.catch((error) => this.handleError(payload, error));
+      const handlerPromise = commandHandler(this, payload, this.service);
+      if (handlerPromise) {
+        void handlerPromise.catch((error) => this.handleError(payload, error));
       }
     } catch (error) {
       this.handleError(payload, error);
@@ -404,15 +413,15 @@ export class Commander {
   /**
    * Invoke a response callback with the given payload
    *
-   * @param {ResponseType} callback Response callback to invoke
-   * @param {PayloadData} payload Payload data for the response
+   * @param {ResponseCallback} responseCallback Response callback to invoke
+   * @param {PayloadData} payload Payload passed to the response callback
    * @param {(error: unknown) => void} [onError] Optional error handler
    */
-  processResponse(callback: ResponseType, payload: PayloadData, onError?: (error: unknown) => void): void {
+  processResponse(responseCallback: ResponseCallback, payload: PayloadData, onError?: (error: unknown) => void): void {
     try {
-      const result = callback(payload);
-      if (result) {
-        void result.catch((error) => {
+      const callbackPromise = responseCallback(payload);
+      if (callbackPromise) {
+        void callbackPromise.catch((error) => {
           if (onError) {
             onError(error);
           } else {
@@ -432,39 +441,39 @@ export class Commander {
   /**
    * Cancel request
    *
-   * @param {number} id Request id
+   * @param {number} requestId Request id
    */
-  cancelRequest(id: number): void {
-    const reject = this.rejects.get(id);
-    this.removeRequest(id);
+  cancelRequest(requestId: number): void {
+    const reject = this.requestRejectors.get(requestId);
+    this.removeRequest(requestId);
     reject?.(new Error('cancelled'));
   }
 
   /**
    * Remove request by ID
    *
-   * @param {number} id Request ID
+   * @param {number} requestId Request ID
    */
-  removeRequest(id: number): void {
-    this.names.delete(id);
-    this.timeouts.delete(id);
-    this.callbacks.delete(id);
-    this.rejects.delete(id);
+  removeRequest(requestId: number): void {
+    this.requestNames.delete(requestId);
+    this.requestStartTimes.delete(requestId);
+    this.responseCallbacks.delete(requestId);
+    this.requestRejectors.delete(requestId);
   }
 
   /**
    * Handle error for a given payload
    *
-   * @param {PayloadData} payload Payload data associated with the error
-   * @param {unknown} error The error to handle
+   * @param {PayloadData} payloadData Payload associated with the error
+   * @param {unknown} handlerError Error to handle
    */
-  handleError(payload: PayloadData, error: unknown): void {
-    this.log.info(`[${LOG_TAG}] handle error: ${error}`, LoggerScope.Debug);
-    if (payload.type === PayloadType.Request) {
+  handleError(payloadData: PayloadData, handlerError: unknown): void {
+    this.log.info(`[${LOG_TAG}] handle error: ${handlerError}`, LoggerScope.Debug);
+    if (payloadData.type === PayloadType.Request) {
       try {
-        this.error(payload, error instanceof Error ? error.message : String(error));
-      } catch (inner) {
-        this.log.error(`[${LOG_TAG}] failed to handle error: ${inner}`, LoggerScope.Debug);
+        this.error(payloadData, handlerError instanceof Error ? handlerError.message : String(handlerError));
+      } catch (responseError) {
+        this.log.error(`[${LOG_TAG}] failed to handle error: ${responseError}`, LoggerScope.Debug);
       }
     }
   }
@@ -472,37 +481,37 @@ export class Commander {
   /**
    * Subscribe callback on command
    *
-   * @param {string} command Command name
-   * @param {ResponseType} callback Callback for command
+   * @param {string} commandName Command name
+   * @param {ResponseCallback} commandHandler Handler for the command
    */
-  addCommand(command: string, callback: ResponseType): void {
-    let list = new Array<ResponseType>();
-    if (this.commands.has(command)) {
-      list = this.commands.get(command)!;
+  addCommand(commandName: string, commandHandler: ResponseCallback): void {
+    let commandHandlers = new Array<ResponseCallback>();
+    if (this.commandHandlers.has(commandName)) {
+      commandHandlers = this.commandHandlers.get(commandName)!;
     }
-    list.push(callback);
-    this.commands.set(command, list);
+    commandHandlers.push(commandHandler);
+    this.commandHandlers.set(commandName, commandHandlers);
   }
 
   /**
    * Unsubscribe callback on command
-   * If callback is null -> clear all of them
+   * If no handler is supplied, clear all handlers
    *
-   * @param {string} command Command name
-   * @param {ResponseType} callback Callback for command
+   * @param {string} commandName Command name
+   * @param {ResponseCallback} commandHandler Handler to remove
    */
-  cancelCommand(command: string, callback?: ResponseType): void {
-    if (this.commands.has(command)) {
-      if (!callback) {
-        const list = new Array<ResponseType>();
-        this.commands.set(command, list);
+  cancelCommand(commandName: string, commandHandler?: ResponseCallback): void {
+    if (this.commandHandlers.has(commandName)) {
+      if (!commandHandler) {
+        const commandHandlers = new Array<ResponseCallback>();
+        this.commandHandlers.set(commandName, commandHandlers);
       } else {
-        const list = this.commands.get(command)!;
-        const index = list.indexOf(callback, 0);
-        if (index > -1) {
-          list.splice(index, 1);
+        const commandHandlers = this.commandHandlers.get(commandName)!;
+        const handlerIndex = commandHandlers.indexOf(commandHandler, 0);
+        if (handlerIndex > -1) {
+          commandHandlers.splice(handlerIndex, 1);
         }
-        this.commands.set(command, list);
+        this.commandHandlers.set(commandName, commandHandlers);
       }
     }
   }
@@ -510,25 +519,25 @@ export class Commander {
   /**
    * Add callback for request
    *
-   * @param {string} request Request name
-   * @param {ResponseType} callback Callback
+   * @param {string} requestName Request name
+   * @param {ResponseCallback} requestHandler Handler for the request
    */
-  addOnRequest(request: string, callback: ResponseType): void {
-    if (this.requests.has(request)) {
-      this.log.warn(`request already exists: ${request}, method: ${this.requests.get(request)}`, LoggerScope.Debug);
+  addOnRequest(requestName: string, requestHandler: ResponseCallback): void {
+    if (this.requestHandlers.has(requestName)) {
+      this.log.warn(`request already exists: ${requestName}, method: ${this.requestHandlers.get(requestName)}`, LoggerScope.Debug);
       return;
     }
-    this.requests.set(request, callback);
+    this.requestHandlers.set(requestName, requestHandler);
   }
 
   /**
    * Remove callback for request
    *
-   * @param {string} request Request name
+   * @param {string} requestName Request name
    */
-  cancelOnRequest(request: string): void {
-    if (this.requests.has(request)) {
-      this.requests.delete(request);
+  cancelOnRequest(requestName: string): void {
+    if (this.requestHandlers.has(requestName)) {
+      this.requestHandlers.delete(requestName);
     }
   }
 
@@ -536,10 +545,10 @@ export class Commander {
    * Timeout checker
    */
   onCheckTimeout(): void {
-    for (const [id, time] of this.timeouts) {
-      const diff = Date.now() - time;
-      if (diff > process.env.REQUEST_TIMEOUT) {
-        const payload = Payload.create(PayloadType.Response, this.names.get(id)!, id, undefined, TIMEOUT_ERROR);
+    for (const [requestId, requestStartTime] of this.requestStartTimes) {
+      const elapsedMilliseconds = Date.now() - requestStartTime;
+      if (elapsedMilliseconds > process.env.REQUEST_TIMEOUT) {
+        const payload = Payload.create(PayloadType.Response, this.requestNames.get(requestId)!, requestId, undefined, TIMEOUT_ERROR);
         this.onPayload(payload);
       }
     }
@@ -602,17 +611,17 @@ export class Commander {
       case PayloadType.Command:
         this.log.info(`<- command: ${payload.name}, data: ${payload.data}`, LoggerScope.Debug);
         if (this.mode === CommanderMode.Service) {
-          const command = this.options.commands?.get(payload.name);
-          if (command) {
-            this.processTask(command, payload);
+          const commandHandler = this.options.commands?.get(payload.name);
+          if (commandHandler) {
+            this.processTask(commandHandler, payload);
           } else {
             this.log.warn(`[${LOG_TAG}] unknown command: ${payload.name}`, LoggerScope.Debug);
           }
         } else {
-          const list = this.commands.get(payload.name);
-          if (list) {
-            for (const callback of list) {
-              this.processResponse(callback, payload);
+          const commandHandlers = this.commandHandlers.get(payload.name);
+          if (commandHandlers) {
+            for (const commandHandler of commandHandlers) {
+              this.processResponse(commandHandler, payload);
             }
           }
         }
@@ -620,17 +629,17 @@ export class Commander {
       case PayloadType.Request:
         this.log.info(`<- request: ${payload.id}.${payload.name}, data: ${payload.data}`, LoggerScope.Debug);
         if (this.mode === CommanderMode.Service) {
-          const request = this.options.commands?.get(payload.name);
-          if (request) {
-            this.processTask(request, payload);
+          const requestHandler = this.options.commands?.get(payload.name);
+          if (requestHandler) {
+            this.processTask(requestHandler, payload);
           } else {
             this.log.warn(`[${LOG_TAG}] unknown request: ${payload.id}.${payload.name}`, LoggerScope.Debug);
             this.error(payload, 'unknown request');
           }
         } else {
-          const callback = this.requests.get(payload.name);
-          if (callback) {
-            this.processResponse(callback, payload, (error) => this.handleError(payload, error));
+          const requestHandler = this.requestHandlers.get(payload.name);
+          if (requestHandler) {
+            this.processResponse(requestHandler, payload, (error) => this.handleError(payload, error));
           } else {
             this.log.warn(`[${LOG_TAG}] unknown request: ${payload.id}.${payload.name}`, LoggerScope.Debug);
             this.error(payload, 'unknown request');
@@ -643,10 +652,10 @@ export class Commander {
         } else {
           this.log.info(`<- error: ${payload.id}.${payload.name}, error: ${payload.error}, data: ${payload.data}`, LoggerScope.Debug);
         }
-        const callback = this.callbacks.get(payload.id);
-        if (callback) {
+        const responseCallback = this.responseCallbacks.get(payload.id);
+        if (responseCallback) {
           this.removeRequest(payload.id);
-          this.processResponse(callback, payload);
+          this.processResponse(responseCallback, payload);
         } else {
           this.log.warn(`[${LOG_TAG}] unknown response: ${payload.id}.${payload.name}`, LoggerScope.Debug);
         }
@@ -660,7 +669,7 @@ export class Commander {
    * Event from protocol when connection closed
    */
   onClose(): void {
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
     this.log.info(`<- disconnect`, LoggerScope.Debug);
@@ -757,11 +766,11 @@ export class Commander {
    * Destroy
    */
   destroy(): void {
-    const closing = !this.closed;
+    const shouldNotifyDisconnect = !this.isClosed;
     this.log.info(`[${LOG_TAG}] destroy`, LoggerScope.Debug);
     this.clear();
     this.protocol.destroy();
-    if (closing) {
+    if (shouldNotifyDisconnect) {
       this.onDisconnect(this.reason);
     }
   }

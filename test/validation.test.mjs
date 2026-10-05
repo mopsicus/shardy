@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Block, BlockType } from '../dist/Block.js';
-import { Commander, CommanderMode, DisconnectReason } from '../dist/Commander.js';
-import { Payload, PayloadType } from '../dist/Payload.js';
-import { DefaultSerializer } from '../dist/default/DefaultSerializer.js';
-import { DefaultValidator } from '../dist/default/DefaultValidator.js';
-import { ValidatorState } from '../dist/Validator.js';
+import { Block, BlockType } from '../dist/block.js';
+import { Commander, CommanderMode, DisconnectReason } from '../dist/commander.js';
+import { Payload, PayloadType } from '../dist/payload.js';
+import { DefaultSerializer } from '../dist/default/default-serializer.js';
+import { DefaultValidator } from '../dist/default/default-validator.js';
+import { ValidatorState } from '../dist/validator.js';
 
 const logger = {
   info() {},

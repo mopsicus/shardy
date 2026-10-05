@@ -1,9 +1,9 @@
-import { Block, BlockData, BlockType, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './Block';
-import { DisconnectReason } from './Commander';
-import { Logger, LoggerScope } from './Logger';
-import { Tools } from './Tools';
-import { Transport } from './Transport';
-import { Connection } from './Connection';
+import { Block, BlockData, BlockType, MAX_BLOCK_SIZE, DEFAULT_BLOCK_SIZE } from './block';
+import { DisconnectReason } from './commander';
+import { Logger, LoggerScope } from './logger';
+import { Tools } from './tools';
+import { Transport } from './transport';
+import { Connection } from './connection';
 
 /**
  * Tag for logs
@@ -76,10 +76,10 @@ export class Protocol {
   constructor(
     private connection: Connection,
     private log: Logger,
-    private block: number = DEFAULT_BLOCK_SIZE,
+    private maxBlockBodySize: number = DEFAULT_BLOCK_SIZE,
   ) {
-    this.transport = new Transport(this.connection, this.log, this.block);
-    if (!Block.validate(this.block ?? DEFAULT_BLOCK_SIZE)) {
+    this.transport = new Transport(this.connection, this.log, this.maxBlockBodySize);
+    if (!Block.validate(this.maxBlockBodySize ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
     }
@@ -90,36 +90,36 @@ export class Protocol {
   /**
    * Send data to transport
    *
-   * @param {BlockType} type Type of block data
-   * @param {Buffer} [body] Buffer for transport
+   * @param {BlockType} blockType Type of block to dispatch
+   * @param {Buffer} [blockBody] Block body bytes
    */
-  dispatch(type: BlockType, body?: Buffer): void {
+  dispatch(blockType: BlockType, blockBody?: Buffer): void {
     if (this.state === ProtocolState.Closed) {
       this.log.warn(`[${LOG_TAG}] send data to closed protocol`, LoggerScope.Debug);
       return;
     }
-    body = body ? body : Buffer.alloc(0);
-    if (body.length > this.block) {
-      this.log.error(`[${LOG_TAG}] block body exceeds the configured limit of ${this.block} bytes`, LoggerScope.Debug);
+    blockBody = blockBody ? blockBody : Buffer.alloc(0);
+    if (blockBody.length > this.maxBlockBodySize) {
+      this.log.error(`[${LOG_TAG}] block body exceeds the configured limit of ${this.maxBlockBodySize} bytes`, LoggerScope.Debug);
       return;
     }
-    this.log.info(`[${LOG_TAG}] dispatch type: ${type}, body: ${body}`, LoggerScope.Debug);
-    const data = Block.encode(type, body);
-    if (data.length === 0) {
+    this.log.info(`[${LOG_TAG}] dispatch type: ${blockType}, body: ${blockBody}`, LoggerScope.Debug);
+    const encodedBlock = Block.encode(blockType, blockBody);
+    if (encodedBlock.length === 0) {
       this.log.error(`[${LOG_TAG}] block body exceeds the maximum of ${MAX_BLOCK_SIZE} bytes`, LoggerScope.Debug);
       return;
     }
-    this.transport.dispatch(data);
+    this.transport.dispatch(encodedBlock);
   }
 
   /**
    * Send data to connection
    *
-   * @param {Buffer} body Serialized command data
+   * @param {Buffer} serializedPayload Serialized command payload
    */
-  send(body: Buffer): void {
-    this.log.info(`[${LOG_TAG}] send data: ${body}`, LoggerScope.Debug);
-    this.dispatch(BlockType.Data, body);
+  send(serializedPayload: Buffer): void {
+    this.log.info(`[${LOG_TAG}] send data: ${serializedPayload}`, LoggerScope.Debug);
+    this.dispatch(BlockType.Data, serializedPayload);
   }
 
   /**
@@ -132,21 +132,21 @@ export class Protocol {
 
   /**
    * Send handshake to connection
-   * @param {Buffer} body Buffer with handshake data
+   * @param {Buffer} handshakePayload Handshake payload bytes
    */
-  handshake(body: Buffer): void {
+  handshake(handshakePayload: Buffer): void {
     this.log.info(`[${LOG_TAG}] send handshake`, LoggerScope.Debug);
     this.state = ProtocolState.Handshake;
-    this.dispatch(BlockType.Handshake, body);
+    this.dispatch(BlockType.Handshake, handshakePayload);
   }
 
   /**
    * Send acknowledgement
-   * @param {Buffer} body Buffer with acknowledge data
+   * @param {Buffer} acknowledgementPayload Acknowledgement payload bytes
    */
-  acknowledge(body: Buffer): void {
+  acknowledge(acknowledgementPayload: Buffer): void {
     this.log.info(`[${LOG_TAG}] send acknowledge`, LoggerScope.Debug);
-    this.dispatch(BlockType.HandshakeAcknowledgement, body);
+    this.dispatch(BlockType.HandshakeAcknowledgement, acknowledgementPayload);
   }
 
   /**
@@ -179,58 +179,58 @@ export class Protocol {
   /**
    * Process and validate all received blocks
    *
-   * @param {Buffer} data Received buffer
+   * @param {Buffer} encodedFrame Frame received from transport
    */
-  private onData(data: Buffer): void {
+  private onData(encodedFrame: Buffer): void {
     if (this.state === ProtocolState.Closed) {
       this.log.warn(`[${LOG_TAG}] received data to closed protocol`, LoggerScope.Debug);
       return;
     }
-    const block = Block.decode(data);
-    if (!Block.check(block.type)) {
-      this.catchBlockForState(block.type);
+    const receivedBlock = Block.decode(encodedFrame);
+    if (!Block.check(receivedBlock.type)) {
+      this.logInvalidBlockForState(receivedBlock.type);
       return;
     }
-    this.log.info(`[${LOG_TAG}] received block: ${block.type}, data: ${block.body}, state: ${this.state}`, LoggerScope.Debug);
+    this.log.info(`[${LOG_TAG}] received block: ${receivedBlock.type}, data: ${receivedBlock.body}, state: ${this.state}`, LoggerScope.Debug);
     switch (this.state) {
       case ProtocolState.Work:
-        switch (block.type) {
+        switch (receivedBlock.type) {
           case BlockType.Heartbeat:
           case BlockType.Kick:
           case BlockType.Data:
-            this.onBlock(block);
+            this.onBlock(receivedBlock);
             break;
           default:
-            this.catchBlockForState(block.type);
+            this.logInvalidBlockForState(receivedBlock.type);
             break;
         }
         break;
       case ProtocolState.Start:
-        switch (block.type) {
+        switch (receivedBlock.type) {
           case BlockType.Heartbeat:
-            this.onBlock(block);
+            this.onBlock(receivedBlock);
             break;
           case BlockType.Handshake:
-            this.onBlock(block);
+            this.onBlock(receivedBlock);
             this.state = ProtocolState.Handshake;
             break;
           default:
-            this.catchBlockForState(block.type);
+            this.logInvalidBlockForState(receivedBlock.type);
             break;
         }
         break;
       case ProtocolState.Handshake:
-        switch (block.type) {
+        switch (receivedBlock.type) {
           case BlockType.HandshakeAcknowledgement:
             this.state = ProtocolState.Work;
-            this.onBlock(block);
+            this.onBlock(receivedBlock);
             break;
           case BlockType.Heartbeat:
           case BlockType.Kick:
-            this.onBlock(block);
+            this.onBlock(receivedBlock);
             break;
           default:
-            this.catchBlockForState(block.type);
+            this.logInvalidBlockForState(receivedBlock.type);
             break;
         }
         break;
@@ -243,10 +243,10 @@ export class Protocol {
    * Log when received invalid block type in state
    *
    * @private
-   * @param {BlockType} type Received block type
+   * @param {BlockType} blockType Received block type
    */
-  private catchBlockForState(type: BlockType): void {
-    this.log.warn(`[${LOG_TAG}] received invalid block type: ${type}, state: ${this.state}`, LoggerScope.Debug);
+  private logInvalidBlockForState(blockType: BlockType): void {
+    this.log.warn(`[${LOG_TAG}] received invalid block type: ${blockType}, state: ${this.state}`, LoggerScope.Debug);
   }
 
   /**

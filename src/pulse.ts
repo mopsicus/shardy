@@ -1,4 +1,4 @@
-import { CommanderMode } from './Commander';
+import { CommanderMode } from './commander';
 
 /**
  * Pulse service for support connection
@@ -18,7 +18,7 @@ export class Pulse {
    * @private
    * @type {number}
    */
-  private checks: number = 0;
+  private pulseCheckCount: number = 0;
 
   /**
    * Current pulse timer
@@ -26,7 +26,7 @@ export class Pulse {
    * @private
    * @type {NodeJS.Timeout}
    */
-  private timer: NodeJS.Timeout;
+  private pulseTimer: NodeJS.Timeout;
 
   /**
    * Local limit cached
@@ -34,7 +34,7 @@ export class Pulse {
    * @private
    * @type {number}
    */
-  private limit: number;
+  private maxPulseChecks: number;
 
   /**
    * Creates an instance of Pulse
@@ -43,16 +43,16 @@ export class Pulse {
    * @param {CommanderMode} mode Commander mode for service or bot
    */
   constructor(private mode: CommanderMode) {
-    this.timer = setInterval(() => this.onCheckPulse(), process.env.PULSE_INTERVAL);
-    this.limit = this.mode === CommanderMode.Bot ? 1 : process.env.PULSE_LIMIT;
+    this.pulseTimer = setInterval(() => this.onCheckPulse(), process.env.PULSE_INTERVAL);
+    this.maxPulseChecks = this.mode === CommanderMode.Bot ? 1 : process.env.PULSE_LIMIT;
   }
 
   /**
    * Pulse checker
    */
   onCheckPulse(): void {
-    this.checks++;
-    if (this.checks > this.limit) {
+    this.pulseCheckCount++;
+    if (this.pulseCheckCount > this.maxPulseChecks) {
       this.reset();
       this.onPulse();
     }
@@ -62,7 +62,7 @@ export class Pulse {
    *  Reset timer when commands received
    */
   reset(): void {
-    this.checks = 0;
+    this.pulseCheckCount = 0;
   }
 
   /**
@@ -70,6 +70,6 @@ export class Pulse {
    */
   clear(): void {
     this.reset();
-    clearInterval(this.timer);
+    clearInterval(this.pulseTimer);
   }
 }

@@ -119,13 +119,13 @@ The general difference between requests and commands that is other side must res
 Request:
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // send request and work with response in callback
 });
 ```
 
 ```ts
-client.request('status', (data) => {
+client.request('status', (response) => {
 // send request with payload
 }, payload);
 ```
@@ -143,7 +143,7 @@ client.command('status', payload); // send command with payload
 Subscribe:
 
 ```ts
-client.on('status', (data) => {
+client.on('status', (payload) => {
 // subscribe on command and process data whenever receive
 });
 ```
@@ -194,7 +194,7 @@ Stages of handshake:
 
 If your implementation does not need to do a two-step handshake, you can set "stubs" on these methods.
 
-Shardy provides an interface for handshake validation. You can implement your own handshake data structure and validation for all these stages. Inherit the `Validator` class, implement methods and pass it to your service and client.
+Shardy provides an interface for handshake validation. You can implement your own handshake data structure and validation for all these stages. Implement the `Validator` interface and pass the implementation to your service and client.
 
 ```ts
 import { Validator, ValidatorState } from 'shardy';
@@ -227,7 +227,7 @@ export class MyHandshake implements Validator {
 
 Shardy supports custom serialization of transmitted data. You can use JSON, MessagePack, Protobuf, FlatBuffers, etc. or your own serializer.
 
-Just inherit the `Serializer` class, implement encode/decode methods and pass it to your service and client.
+Implement the `Serializer` interface, provide its `encode` and `decode` methods, and pass the implementation to your service and client.
 
 ```ts
 import { PayloadData, Serializer } from 'shardy';
@@ -250,7 +250,7 @@ export class MyJsonSerializer implements Serializer {
 
 ### Extensions
 
-You can enhance your Shardy-services with extensions. Just inherit the `Extension` class, implement methods, choose `ExtensionMode` to handle: before service callbacks or after, and apply it before starting the server.
+You can enhance your Shardy services with extensions. Implement the `Extension` interface, choose an `ExtensionMode` to run before or after service callbacks, and register the extension before starting the server.
 
 ```ts
 const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, service, { validator, serializer, commands });

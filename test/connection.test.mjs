@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import net from 'node:net';
 import { test } from 'node:test';
-import { Connection, DEFAULT_SEND_BYTES } from '../dist/Connection.js';
-import { TransportType } from '../dist/Transport.js';
+import { Connection, DEFAULT_SEND_BYTES } from '../dist/connection.js';
+import { TransportType } from '../dist/transport.js';
 
 const logger = {
   info() {},

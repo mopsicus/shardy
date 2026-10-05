@@ -8,13 +8,13 @@ Check out the [API](./reference.md) and tutorials and you can write your own bac
 
 # 🔩 Command structure
 
-Each command is a function of type `Task`:
+Each command is a function of type `CommandHandler`:
 
 ```ts
 /**
- * Type for loaded commands and requests
+ * Handler for commands and requests loaded by a service
  */
-export type Task = (commander: Commander, payload: PayloadData, service: Service) => void;
+export type CommandHandler = (commander: Commander, payload: PayloadData, service: Service) => void | Promise<void>;
 ```
 
 All commands/requests script export a named function. Shardy passes all the necessary objects to your commands.
@@ -73,14 +73,14 @@ const server = new Server(process.env.SERVICE_HOST, process.env.SERVICE_PORT, se
 server.start();
 ```
 
-The commands here are a map of [Task](./reference.md#-commander): 
+The commands here are a map of [CommandHandler](./reference.md#-commander):
 
 ```ts
 export interface ServiceOptions {
   /**
-   * List of available service commads and requests
+  * List of available service commands and requests
    */
-  commands?: Map<string, Task>;
+  commands?: Map<string, CommandHandler>;
   ...
 }
 ```

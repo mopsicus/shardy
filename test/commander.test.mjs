@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Commander, DisconnectReason } from '../dist/Commander.js';
-import { Payload, PayloadType } from '../dist/Payload.js';
+import { Commander, DisconnectReason } from '../dist/commander.js';
+import { Payload, PayloadType } from '../dist/payload.js';
 
 const logger = {
   info() {},
@@ -48,8 +48,8 @@ test('rejects fetch when the connection closes and only notifies once', async ()
 
   await rejection;
   assert.equal(disconnects, 1);
-  assert.equal(commander.callbacks.size, 0);
-  assert.equal(commander.timeouts.size, 0);
+  assert.equal(commander.responseCallbacks.size, 0);
+  assert.equal(commander.requestStartTimes.size, 0);
   commander.destroy();
 });
 
@@ -58,7 +58,7 @@ test('passes disconnect payload to callback requests after removing pending stat
   let response;
   let requestId;
   requestId = commander.request('status', (payload) => {
-    assert.equal(commander.callbacks.has(requestId), false);
+    assert.equal(commander.responseCallbacks.has(requestId), false);
     response = payload;
   });
 
@@ -73,13 +73,13 @@ test('passes disconnect payload to callback requests after removing pending stat
 test('rejects fetch when explicitly cancelled', async () => {
   const commander = createCommander();
   const pending = commander.fetch('status');
-  const id = Array.from(commander.callbacks.keys())[0];
+  const id = Array.from(commander.responseCallbacks.keys())[0];
   const rejection = assert.rejects(pending, { message: 'cancelled' });
 
   commander.cancelRequest(id);
 
   await rejection;
-  assert.equal(commander.callbacks.has(id), false);
+  assert.equal(commander.responseCallbacks.has(id), false);
   commander.destroy();
 });
 
@@ -102,8 +102,8 @@ test('removes response callbacks before invoking them even when they throw', () 
 
   commander.onPayload(Payload.create(PayloadType.Response, 'status', id));
 
-  assert.equal(commander.callbacks.has(id), false);
-  assert.equal(commander.timeouts.has(id), false);
+  assert.equal(commander.responseCallbacks.has(id), false);
+  assert.equal(commander.requestStartTimes.has(id), false);
   commander.destroy();
 });
 

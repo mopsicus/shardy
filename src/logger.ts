@@ -103,10 +103,10 @@ export interface LoggerFilter {
 
 /**
  * Create runtime format for Winston logger
- * 
+ *
  * @returns The Winston logger format configuration
  */
-const makeFormat = () => {
+const createLogFormat = () => {
   return format.combine(
     format.colorize(),
     format.timestamp(),
@@ -117,91 +117,92 @@ const makeFormat = () => {
       return `${info.timestamp} [${label}] ${info.level} ${info.message}`;
     }),
   );
-}
+};
 
 /**
  * Request a logger runtime
- * 
- * @returns An object containing the key and the logger runtime
+ *
+ * @returns The runtime key and acquired logger runtime
  */
-const requestLogger = (): { key: string; runtime: LoggerRuntime } => {
+const acquireLoggerRuntime = (): { runtimeKey: string; runtime: LoggerRuntime } => {
   const environment = process.env.ENV ?? '';
-  const directory = process.env.LOGS_DIR ?? '';
-  const key = `${environment}\0${path.resolve(__dirname, directory)}`;
-  let runtime = runtimes.get(key);
-  if (runtime?.closing) {
+  const logDirectory = process.env.LOGS_DIR ?? '';
+  const runtimeKey = `${environment}\0${path.resolve(__dirname, logDirectory)}`;
+  let loggerRuntime = runtimes.get(runtimeKey);
+  if (loggerRuntime?.closing) {
     throw new Error('[logger] runtime is closing');
   }
-  if (!runtime) {
-    const logger = createLogger({ format: makeFormat(), exitOnError: false });
+  if (!loggerRuntime) {
+    const logger = createLogger({ format: createLogFormat(), exitOnError: false });
     const files: FileTransport[] = [];
-    const ready: Promise<void>[] = [];
+    const fileReadyPromises: Promise<void>[] = [];
     logger.on('error', (error: Error) => {
       process.stderr.write(`[logger] transport error: ${error.message}\n`);
     });
-    const addFile = (filename: string, level?: LoggerType, handleExceptions = false) => {
-      const file = new transports.File({ filename, level, handleExceptions });
-      files.push(file);
-      ready.push(
+    const addFile = (filePath: string, logLevel?: LoggerType, shouldHandleExceptions = false) => {
+      const fileTransport = new transports.File({ filename: filePath, level: logLevel, handleExceptions: shouldHandleExceptions });
+      files.push(fileTransport);
+      fileReadyPromises.push(
         new Promise<void>((resolve) => {
-          let settled = false;
-          const finish = () => {
-            if (!settled) {
-              settled = true;
+          let isSettled = false;
+          const resolveWhenReady = () => {
+            if (!isSettled) {
+              isSettled = true;
               resolve();
             }
           };
-          file.once('open', finish);
-          file.once('error', finish);
+          fileTransport.once('open', resolveWhenReady);
+          fileTransport.once('error', resolveWhenReady);
         }),
       );
-      logger.add(file);
+      logger.add(fileTransport);
     };
     if (environment === 'development') {
       logger.add(new transports.Console());
-      addFile(path.join(__dirname, directory, 'all.log'));
+      addFile(path.join(__dirname, logDirectory, 'all.log'));
     } else {
-      addFile(path.join(__dirname, directory, 'info.log'), LoggerType.Info);
-      addFile(path.join(__dirname, directory, 'warnings.log'), LoggerType.Warning);
-      addFile(path.join(__dirname, directory, 'errors.log'), LoggerType.Error, true);
+      addFile(path.join(__dirname, logDirectory, 'info.log'), LoggerType.Info);
+      addFile(path.join(__dirname, logDirectory, 'warnings.log'), LoggerType.Warning);
+      addFile(path.join(__dirname, logDirectory, 'errors.log'), LoggerType.Error, true);
     }
-    runtime = { logger, files, references: 0, ready: Promise.all(ready).then(() => undefined) };
-    runtimes.set(key, runtime);
+    loggerRuntime = { logger, files, references: 0, ready: Promise.all(fileReadyPromises).then(() => undefined) };
+    runtimes.set(runtimeKey, loggerRuntime);
   }
-  runtime.references++;
-  return { key, runtime };
+  loggerRuntime.references++;
+  return { runtimeKey, runtime: loggerRuntime };
 };
 
 /**
  * Free a logger runtime
- * 
- * @param key The key of the logger runtime
- * @param runtime The logger runtime to free
+ *
+ * @param runtimeKey The key of the logger runtime
+ * @param loggerRuntime The logger runtime to free
  * @returns A promise that resolves when the logger runtime is freed
  */
-const freeLogger = (key: string, runtime: LoggerRuntime): Promise<void> => {
-  runtime.references--;
-  if (runtime.references > 0) {
+const releaseLoggerRuntime = (runtimeKey: string, loggerRuntime: LoggerRuntime): Promise<void> => {
+  loggerRuntime.references--;
+  if (loggerRuntime.references > 0) {
     return Promise.resolve();
   }
-  if (runtime.closing) {
-    return runtime.closing;
+  if (loggerRuntime.closing) {
+    return loggerRuntime.closing;
   }
-  runtime.closing = (async () => {
+  loggerRuntime.closing = (async () => {
     try {
-      await runtime.ready;
-      const closed = runtime.files.map((file) =>
+      await loggerRuntime.ready;
+      const transportClosePromises = loggerRuntime.files.map(
+        (fileTransport) =>
           new Promise<void>((resolve) => {
-            file.once('closed', resolve);
+            fileTransport.once('closed', resolve);
           }),
       );
-      runtime.logger.close();
-      await Promise.all(closed);
+      loggerRuntime.logger.close();
+      await Promise.all(transportClosePromises);
     } finally {
-      runtimes.delete(key);
+      runtimes.delete(runtimeKey);
     }
   })();
-  return runtime.closing;
+  return loggerRuntime.closing;
 };
 
 /**
@@ -225,7 +226,7 @@ export class Logger {
    * @private
    * @type {string}
    */
-  private id: string;
+  private runtimeKey: string;
 
   /**
    * Logger runtime instance
@@ -261,8 +262,8 @@ export class Logger {
     private tags: string[],
     label?: string,
   ) {
-    const acquired = requestLogger();
-    this.id = acquired.key;
+    const acquired = acquireLoggerRuntime();
+    this.runtimeKey = acquired.runtimeKey;
     this.runtime = acquired.runtime;
     if (label) {
       this.setLabel(this.tags, label);
@@ -273,14 +274,13 @@ export class Logger {
   }
 
   /**
-   * Fastest way to check filter empty
+   * Check whether the filter has no configured criteria
    *
-   * @static
-   * @param {*} filter Object to check
-   * @return {*}  {boolean} Empty or not
+   * @param {LoggerFilter} loggerFilter Filter to check
+   * @returns {boolean} True when the filter is empty
    */
-  private isFilterEmpty(filter: LoggerFilter): boolean {
-    for (const i in filter) {
+  private isFilterEmpty(loggerFilter: LoggerFilter): boolean {
+    for (const filterPropertyName in loggerFilter) {
       return false;
     }
     return true;
@@ -289,30 +289,32 @@ export class Logger {
   /**
    * Format label with connection info
    *
-   * @return {*}  {string} Formatted label
+   * @returns {string} Formatted log label
    */
-  private formatLabelTag(): string {
+  private formatLogLabel(): string {
     let label = '-';
     if (this.tags.length > 0) {
       label = this.tags[0];
-      for (let i = 1; i < this.tags.length; i++) {
-        label = label.concat(`|${this.tags[i]}`);
+      for (let tagIndex = 1; tagIndex < this.tags.length; tagIndex++) {
+        label = label.concat(`|${this.tags[tagIndex]}`);
       }
     }
     return label;
   }
 
   /**
-   * Check filter and enable log if need
+   * Check whether a log entry satisfies the configured filters
    *
-   * @private
-   * @type {*}
+   * @param {LoggerType} logType Log level
+   * @param {LoggerScope} logScope Log scope
+   * @param {string} logMessage Log message
+   * @returns {boolean} True when the log entry passes the filters
    */
-  private checkFilter(type: LoggerType, scope: LoggerScope, message: string): boolean {
+  private matchesFilter(logType: LoggerType, logScope: LoggerScope, logMessage: string): boolean {
     if (this.isFilterEmpty(this.filter)) {
       return true;
     }
-    const mode = this.filter.mode ? this.filter.mode : LoggerFilterMode.And;
+    const filterMode = this.filter.mode ? this.filter.mode : LoggerFilterMode.And;
     const conditions: boolean[] = [];
     if (this.filter.scope) {
       if (this.filter.scope.includes(LoggerScope.None)) {
@@ -321,75 +323,81 @@ export class Logger {
       if (this.filter.scope.includes(LoggerScope.All)) {
         conditions.push(true);
       } else {
-        conditions.push(this.filter.scope.includes(scope));
+        conditions.push(this.filter.scope.includes(logScope));
       }
     }
     if (this.filter.type) {
       if (this.filter.type.includes(LoggerType.All)) {
         conditions.push(true);
       } else {
-        conditions.push(this.filter.type.includes(type));
+        conditions.push(this.filter.type.includes(logType));
       }
     }
     if (this.filter.tags && this.tags) {
-      for (let i = 0; i < this.filter.tags.length; i++) {
-        conditions.push(this.filter.tags[i] === this.tags[i]);
+      for (let tagIndex = 0; tagIndex < this.filter.tags.length; tagIndex++) {
+        conditions.push(this.filter.tags[tagIndex] === this.tags[tagIndex]);
       }
     }
     if (this.filter.contains) {
-      conditions.push(message.indexOf(this.filter.contains) >= 0);
+      conditions.push(logMessage.indexOf(this.filter.contains) >= 0);
     }
-    let isPassed = false;
-    switch (mode) {
+    let isFilterSatisfied = false;
+    switch (filterMode) {
       case LoggerFilterMode.And:
-        isPassed = conditions.every((item) => item === true);
+        isFilterSatisfied = conditions.every((conditionMet) => conditionMet === true);
         break;
       case LoggerFilterMode.Or:
-        isPassed = conditions.some((item) => item === true);
+        isFilterSatisfied = conditions.some((conditionMet) => conditionMet === true);
         break;
       case LoggerFilterMode.Ignore:
-        isPassed = conditions.every((item) => item === false);
+        isFilterSatisfied = conditions.every((conditionMet) => conditionMet === false);
         break;
       default:
         break;
     }
-    return isPassed;
+    return isFilterSatisfied;
   }
 
   /**
    * Write log message
    *
    * @private
-   * @param {LoggerType} level Log level
-   * @param {string} message Log message
-   * @param {LoggerScope} scope Log scope
+   * @param {LoggerType} logType Log level
+   * @param {string} logMessage Log message
+   * @param {LoggerScope} logScope Log scope
    */
-  private write(level: LoggerType, message: string, scope: LoggerScope): void {
-    if (!this.destroyAction && this.checkFilter(level, scope, message)) {
-      this.runtime.logger.log({ level, message, type: level, scope, label: this.label ?? this.formatLabelTag() });
+  private writeLog(logType: LoggerType, logMessage: string, logScope: LoggerScope): void {
+    if (!this.destroyAction && this.matchesFilter(logType, logScope, logMessage)) {
+      this.runtime.logger.log({
+        level: logType,
+        message: logMessage,
+        type: logType,
+        scope: logScope,
+        label: this.label ?? this.formatLogLabel(),
+      });
     }
   }
 
   /**
    * Update label info
    *
-   * If label exists it will replace data info
+   * If a custom label is set, it replaces the tag-based label
    *
-   * @param {string[]} [data=[]] Info with connection and data
+   * @param {string[]} [tags=[]] Connection and client tags
    * @param {string} [label] Custom label
    */
-  setLabel(data: string[] = [], label?: string): void {
-    this.tags = data;
+  setLabel(tags: string[] = [], label?: string): void {
+    this.tags = tags;
     this.label = label || undefined;
   }
 
   /**
    * Update filter
    *
-   * @param {LoggerFilter} data Filter options
+   * @param {LoggerFilter} filter Logger filter options
    */
-  setFilter(data: LoggerFilter): void {
-    this.filter = data;
+  setFilter(filter: LoggerFilter): void {
+    this.filter = filter;
   }
 
   /**
@@ -409,16 +417,16 @@ export class Logger {
   /**
    * Get current filter
    *
-   * @return {*}  {LoggerFilter} Logger filter
+   * @returns {LoggerFilter} Current logger filter
    */
   getFilter(): LoggerFilter {
     return this.filter;
   }
 
   /**
-   * Return aray of tags, for modify, e.g.
+   * Return tags for inspection or modification
    *
-   * @return {*}  {string[]} Array of tags
+   * @returns {string[]} Current logger tags
    */
   getTags(): string[] {
     return this.tags;
@@ -431,7 +439,7 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   info(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.write(LoggerType.Info, message, scope);
+    this.writeLog(LoggerType.Info, message, scope);
   }
 
   /**
@@ -441,7 +449,7 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   warn(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.write(LoggerType.Warning, message, scope);
+    this.writeLog(LoggerType.Warning, message, scope);
   }
 
   /**
@@ -451,7 +459,7 @@ export class Logger {
    * @param {LoggerScope} [scope=LoggerScope.User] Scope for logging
    */
   error(message: string, scope: LoggerScope = LoggerScope.User): void {
-    this.write(LoggerType.Error, message, scope);
+    this.writeLog(LoggerType.Error, message, scope);
   }
 
   /**
@@ -459,7 +467,7 @@ export class Logger {
    */
   destroy(): Promise<void> {
     if (!this.destroyAction) {
-      this.destroyAction = freeLogger(this.id, this.runtime);
+      this.destroyAction = releaseLoggerRuntime(this.runtimeKey, this.runtime);
     }
     return this.destroyAction;
   }
