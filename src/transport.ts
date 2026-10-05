@@ -17,14 +17,14 @@ export enum TransportType {
 }
 
 /**
- * Transport data structure
+ * Buffer read state
  *
  * @export
- * @interface TransportData
+ * @interface BufferReadState
  */
-interface TransportData {
+interface BufferReadState {
   /**
-   * Current package buffer
+   * Current frame buffer
    */
   buffer: Buffer;
 
@@ -34,7 +34,7 @@ interface TransportData {
   offset: number;
 
   /**
-   * Size for current package
+   * Total frame size
    */
   size: number;
 }
@@ -87,16 +87,16 @@ export class Transport {
   /**
    * Head data
    *
-   * @type {TransportData}
+   * @type {BufferReadState}
    */
-  private header: TransportData;
+  private frameHeader: BufferReadState;
 
   /**
-   * Package data
+   * Current frame data
    *
-   * @type {TransportData}
+   * @type {BufferReadState}
    */
-  private currentPackage: TransportData;
+  private currentFrame: BufferReadState;
 
   /**
    * Flag to indicate if the transport has been disconnected
@@ -115,8 +115,8 @@ export class Transport {
     private maxBlockBodySize: number = DEFAULT_BLOCK_SIZE,
   ) {
     this.state = TransportState.Head;
-    this.header = { buffer: Buffer.alloc(BLOCK_HEAD), offset: 0, size: BLOCK_HEAD };
-    this.currentPackage = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
+    this.frameHeader = { buffer: Buffer.alloc(BLOCK_HEAD), offset: 0, size: BLOCK_HEAD };
+    this.currentFrame = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
     if (!Block.validate(this.maxBlockBodySize ?? DEFAULT_BLOCK_SIZE)) {
       this.log.error(`[${LOG_TAG}] block size must be an integer between 0 and ${MAX_BLOCK_SIZE}`, LoggerScope.System);
       return;
@@ -182,33 +182,33 @@ export class Transport {
    * @return {number} Next offset within the incoming chunk
    */
   readHead(incomingChunk: Buffer, chunkOffset: number): number {
-    const bytesToCopy = Math.min(this.header.size - this.header.offset, incomingChunk.length - chunkOffset);
+    const bytesToCopy = Math.min(this.frameHeader.size - this.frameHeader.offset, incomingChunk.length - chunkOffset);
     let nextChunkOffset = chunkOffset + bytesToCopy;
-    incomingChunk.copy(this.header.buffer, this.header.offset, chunkOffset, nextChunkOffset);
-    this.header.offset += bytesToCopy;
-    if (this.header.offset >= this.header.size) {
-      const bodyLength = this.calculatePackageSize(this.header.buffer);
+    incomingChunk.copy(this.frameHeader.buffer, this.frameHeader.offset, chunkOffset, nextChunkOffset);
+    this.frameHeader.offset += bytesToCopy;
+    if (this.frameHeader.offset >= this.frameHeader.size) {
+      const bodyLength = this.calculateFrameBodySize(this.frameHeader.buffer);
       if (bodyLength > this.maxBlockBodySize) {
-        this.log.warn(`[${LOG_TAG}] package size exceeds limit: ${bodyLength}`, LoggerScope.Debug);
+        this.log.warn(`[${LOG_TAG}] frame body size exceeds limit: ${bodyLength}`, LoggerScope.Debug);
         this.state = TransportState.Closed;
         this.connection.destroy();
         this.notifyDisconnect();
         return incomingChunk.length;
       }
-      if (Block.check(this.header.buffer[0])) {
-        this.currentPackage.size = bodyLength + this.header.size;
-        this.currentPackage.buffer = Buffer.alloc(this.currentPackage.size);
-        this.header.buffer.copy(this.currentPackage.buffer, 0, 0, this.header.size);
-        this.currentPackage.offset = this.header.size;
+      if (Block.check(this.frameHeader.buffer[0])) {
+        this.currentFrame.size = bodyLength + this.frameHeader.size;
+        this.currentFrame.buffer = Buffer.alloc(this.currentFrame.size);
+        this.frameHeader.buffer.copy(this.currentFrame.buffer, 0, 0, this.frameHeader.size);
+        this.currentFrame.offset = this.frameHeader.size;
         this.state = TransportState.Body;
         if (bodyLength === 0) {
-          const frameBuffer = this.currentPackage.buffer;
+          const frameBuffer = this.currentFrame.buffer;
           this.reset();
           this.onData(frameBuffer);
         }
       } else {
         nextChunkOffset = incomingChunk.length;
-        this.log.warn(`[${LOG_TAG}] invalid block type: ${this.header.buffer[0]}`, LoggerScope.Debug);
+        this.log.warn(`[${LOG_TAG}] invalid block type: ${this.frameHeader.buffer[0]}`, LoggerScope.Debug);
       }
     }
     return nextChunkOffset;
@@ -222,12 +222,12 @@ export class Transport {
    * @return {number} Next offset within the incoming chunk
    */
   readBody(incomingChunk: Buffer, chunkOffset: number): number {
-    const bytesToCopy = Math.min(this.currentPackage.size - this.currentPackage.offset, incomingChunk.length - chunkOffset);
+    const bytesToCopy = Math.min(this.currentFrame.size - this.currentFrame.offset, incomingChunk.length - chunkOffset);
     const nextChunkOffset = chunkOffset + bytesToCopy;
-    incomingChunk.copy(this.currentPackage.buffer, this.currentPackage.offset, chunkOffset, nextChunkOffset);
-    this.currentPackage.offset += bytesToCopy;
-    if (this.currentPackage.offset === this.currentPackage.size) {
-      const frameBuffer = this.currentPackage.buffer;
+    incomingChunk.copy(this.currentFrame.buffer, this.currentFrame.offset, chunkOffset, nextChunkOffset);
+    this.currentFrame.offset += bytesToCopy;
+    if (this.currentFrame.offset === this.currentFrame.size) {
+      const frameBuffer = this.currentFrame.buffer;
       this.onData(frameBuffer);
       this.reset();
     }
@@ -238,8 +238,8 @@ export class Transport {
    * Reset all data after receive full package
    */
   reset(): void {
-    this.header = { buffer: Buffer.alloc(BLOCK_HEAD), offset: 0, size: BLOCK_HEAD };
-    this.currentPackage = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
+    this.frameHeader = { buffer: Buffer.alloc(BLOCK_HEAD), offset: 0, size: BLOCK_HEAD };
+    this.currentFrame = { buffer: Buffer.alloc(0), offset: 0, size: 0 };
     if (this.state !== TransportState.Closed) {
       this.state = TransportState.Head;
     }
@@ -256,18 +256,22 @@ export class Transport {
   }
 
   /**
-   * Get package size from header
+   * Get frame body size from header
    *
-   * @param {Buffer} headerBuffer Header buffer
+   * @param {Buffer} frameHeaderBuffer Frame header buffer
    * @returns {number} Frame body length
    */
-  calculatePackageSize(headerBuffer: Buffer): number {
+  calculatePackageSize(frameHeaderBuffer: Buffer): number {
+    return this.calculateFrameBodySize(frameHeaderBuffer);
+  }
+
+  private calculateFrameBodySize(frameHeaderBuffer: Buffer): number {
     let bodyLength = 0;
     for (let byteOffset = 1; byteOffset < BLOCK_HEAD; byteOffset++) {
       if (byteOffset > 1) {
         bodyLength <<= 8;
       }
-      bodyLength += headerBuffer.readUInt8(byteOffset);
+      bodyLength += frameHeaderBuffer.readUInt8(byteOffset);
     }
     return bodyLength;
   }
