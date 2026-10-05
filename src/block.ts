@@ -91,7 +91,7 @@ export class Block {
     const blockBuffer = Buffer.from(encodedData);
     const blockType = <BlockType>blockBuffer[0];
     let offset = 1;
-    const bodyLength = ((blockBuffer[offset++] << 16) | (blockBuffer[offset++] << 8) | blockBuffer[offset++]) >>> 0;
+    const bodyLength = ((blockBuffer[offset++] << 16) | (blockBuffer[offset++] << 8) | blockBuffer[offset]) >>> 0;
     const bodyBuffer = bodyLength ? Buffer.alloc(bodyLength) : Buffer.alloc(0);
     blockBuffer.copy(bodyBuffer, 0, BLOCK_HEAD, BLOCK_HEAD + bodyLength);
     return { type: blockType, body: bodyBuffer };

@@ -647,7 +647,7 @@ export class Commander {
           }
         }
         break;
-      case PayloadType.Response:
+      case PayloadType.Response: {
         if (payload.error.trim().length === 0) {
           this.log.info(`<- response: ${payload.id}.${payload.name}, data: ${payload.data}`, LoggerScope.Debug);
         } else {
@@ -661,6 +661,7 @@ export class Commander {
           this.log.warn(`[${LOG_TAG}] unknown response: ${payload.id}.${payload.name}`, LoggerScope.Debug);
         }
         break;
+      }
       default:
         break;
     }

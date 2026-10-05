@@ -112,11 +112,7 @@ async function createHarness(name, { host = '127.0.0.1', port = 0, transport = T
       return server.server.address().port;
     },
     async close() {
-      if (server.server.listening) {
-        await withTimeout(server.stop(), `${name} shutdown`);
-      } else {
-        await server.log.destroy();
-      }
+      await withTimeout(server.stop(), `${name} shutdown`);
       fs.rmSync(logDirectory, { recursive: true, force: true });
     },
   };

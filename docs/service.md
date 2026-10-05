@@ -219,9 +219,11 @@ If you are using the Shardy template, you can try the scripts for debugging:
 "scripts": {
   "build-ts": "tsc",
   "format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-  "build": "npm run build-ts && npm run lint",
+  "format:check": "prettier --config .prettierrc --check 'src/**/*.ts'",
+  "build": "npm run build-ts",
+  "typecheck": "tsc --noEmit",
   "debug": "npm run build && npm run watch-debug",
-  "lint": "tsc --noEmit && eslint \"**/*.{js,ts}\" --quiet --fix && npm run format",
+  "lint": "eslint src",
   "serve-debug": "nodemon --inspect dist/app.js",
   "serve": "node dist/app.js",
   "start": "npm run serve",

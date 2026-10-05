@@ -1,6 +1,6 @@
 # 🙌 Welcome to Shardy
 
-Once again, Shardy is a simple backend framework for Node.js written on TypeScript. So, all you need to start developing with Shardy is: Node.js, TypeScript and some skills.
+Once again, Shardy is a simple backend framework for Node.js written in TypeScript. Shardy requires Node.js 24 or later; to develop the library, install TypeScript and npm 11.12.1.
 
 Also, TypeScript is very similar to C#, so if you have experience with that language (and I hope you do :), it will be easy for you to understand and use this framework.
 

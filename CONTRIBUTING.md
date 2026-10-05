@@ -80,7 +80,7 @@ Ready to contribute? Here are the simple steps for local development:
     ```
     git clone git@github.com:YOUR_USERNAME/shardy.git
     ```
-3. Make sure you have the latest LTS version of Node.js installed
+3. Install Node.js 24 or later and npm 11.12.1
 4. Create a branch for local development:
     ```
     git checkout -b shardy-bugfix-or-feature
@@ -88,6 +88,14 @@ Ready to contribute? Here are the simple steps for local development:
 5. Install dependencies:
     ```
     npm install
+    ```
+6. Run the project checks:
+    ```
+    npm run build
+    npm run typecheck
+    npm test
+    npm run lint
+    npm run format:check
     ```
 7. Implement what you wanted. Please make sure you add comments and stick to the existing code style
 8. Build Shardy:

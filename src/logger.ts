@@ -161,7 +161,6 @@ const acquireLoggerRuntime = (): { runtimeKey: string; runtime: LoggerRuntime } 
       logger.add(new transports.Console());
       addFile(path.join(__dirname, logDirectory, 'all.log'));
     } else {
-      addFile(path.join(__dirname, logDirectory, 'info.log'), LoggerType.Info);
       addFile(path.join(__dirname, logDirectory, 'warnings.log'), LoggerType.Warning);
       addFile(path.join(__dirname, logDirectory, 'errors.log'), LoggerType.Error, true);
     }

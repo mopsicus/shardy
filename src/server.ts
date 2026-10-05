@@ -191,6 +191,7 @@ export class Server {
         break;
       case TransportType.WebSocket:
         this.httpServer.listen(this.port, this.host);
+        break;
       default:
         break;
     }

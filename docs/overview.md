@@ -19,8 +19,6 @@ If you have minimal knowledge of Node.js and TypeScript, you can easily launch y
 # 🧩 Libraries
 
 Shardy doesn't use any third-party libraries for its work, almost. Below is a description of what is used and why:
-- dotenv: to work with environment files
-- ip: for displaying IP addresses
 - winston: for working with the built-in logger
 - ws: for working with websockets
 

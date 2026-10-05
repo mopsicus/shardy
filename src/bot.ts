@@ -1,5 +1,5 @@
-import ip from 'ip';
 import net from 'net';
+import os from 'node:os';
 import { WebSocket } from 'ws';
 import { Logger, LoggerScope } from './logger';
 import { Client } from './client';
@@ -221,7 +221,7 @@ export class Bot {
    */
   private onClientConnect(): void {
     const connectionId = Tools.generateId(ID_LENGTH);
-    const remoteAddress = ip.address();
+    const remoteAddress = this.getLocalAddress();
     this.log.setLabel([connectionId, remoteAddress]);
     this.isConnected = true;
     this.client = new Client(this.connection, connectionId, this.log, {} as Service, this.options, CommanderMode.Bot);
@@ -242,5 +242,16 @@ export class Bot {
   private onClientDisconnect(reason: DisconnectReason): void {
     this.isConnected = false;
     this.onDisconnect(reason);
+  }
+
+  /**
+   * Get local IP address
+   *
+   * @private
+   * @returns {string} Local IP address
+   */
+  private getLocalAddress(): string {
+    const interfaces = Object.values(os.networkInterfaces()).flatMap((addresses) => addresses ?? []);
+    return interfaces.find(({ family, address }) => family.toString().toLowerCase() === 'ipv4' && !address.startsWith('127.'))?.address ?? '127.0.0.1';
   }
 }
