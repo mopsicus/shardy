@@ -363,7 +363,7 @@ isClosing: boolean;
 isClosed: boolean;
 ```
 
-The legacy `outgone` queue counter remains available for compatibility; use `outgoingBytes` in new code.
+Use `outgoingBytes` to inspect the number of bytes currently queued for sending.
 
 # 🧩 Extension
 
@@ -599,7 +599,7 @@ static create(payloadType: PayloadType, commandOrRequestName: string, requestId:
  * @param {unknown} candidate Payload candidate to validate
  * @returns {boolean} True when candidate is valid PayloadData
  */
-static check(candidate: unknown): candidate is PayloadData;
+static check(payloadCandidate: unknown): payloadCandidate is PayloadData;
 ```
 
 The `check` method controls that the received data is correct and available for processing.
@@ -969,20 +969,20 @@ export interface ServiceOptions {
  * Generate random string id
  *
  * @static
- * @param {number} length Length for string
+ * @param {number} idLength Length of the generated id
  * @returns {string} randomized id
  */
-static generateId(length: number): string;
+static generateId(idLength: number): string;
 
 /**
  * Get tag from module filename
  *
  * @static
- * @param {NodeModule} item Node module
+ * @param {NodeModule} nodeModule Node module
  * @return {*} {string} short name lowercased
  */
 
-static getTag(item: NodeModule): string;
+static getTag(nodeModule: NodeModule): string;
 
 /**
  * Find all files in directory (recursive)

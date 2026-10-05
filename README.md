@@ -69,7 +69,7 @@ Your (micro)service must implement `Service` interface to handle general events.
 All your other objects, classes, DBs, etc. should be linked to this class otherwise you won't be able to access them from commands\requests files.
 
 ```ts
-import { TransportType, Service, Client } from 'shardy';
+import { TransportType, Service, Client, DisconnectReason } from 'shardy';
 
 export class MyService implements Service {
 
@@ -87,7 +87,7 @@ export class MyService implements Service {
     // new client connected
     }
 
-    async onDisconnect(client: Client): Promise<void> {
+    async onDisconnect(client: Client, reason: DisconnectReason): Promise<void> {
     // client disconnected
     }
 
@@ -95,7 +95,7 @@ export class MyService implements Service {
     // client ready to work
     }    
 
-    async onListening(): Promise<void> {
+    async onListening(host: string, port: number): Promise<void> {
     // service started
     }
 
@@ -201,19 +201,19 @@ import { Validator, ValidatorState } from 'shardy';
 
 export class MyHandshake implements Validator {
 
-    verifyHandshake(body: Buffer): ValidatorState {
+    verifyHandshake(handshakePayload: Buffer): ValidatorState {
     // vefify initial handshake
     }
 
-    verifyAcknowledgement(body: Buffer): ValidatorState {
+    verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
     // vefify acknowledgement data
     }
 
-    acknowledgement(body: Buffer): Buffer {
+    acknowledgement(handshakePayload: Buffer): Buffer {
     // data for acknowledgement after handshake validation passed
     }
 
-    handshake(body?: Buffer): Buffer {
+    handshake(customHandshakePayload?: Buffer): Buffer {
     // data for initial handshake
     }
 
@@ -234,11 +234,11 @@ import { PayloadData, Serializer } from 'shardy';
 
 export class MyJsonSerializer implements Serializer {
 
-    encode(body: PayloadData): Buffer {
+    encode(payload: PayloadData): Buffer {
     // encode PayloadData to Buffer for transporting
     }
 
-    decode(body: Buffer): PayloadData {
+    decode(encodedPayload: Buffer): PayloadData {
     // decode recevied data and serialize to PayloadData
     }
 

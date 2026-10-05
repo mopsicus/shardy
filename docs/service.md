@@ -80,19 +80,19 @@ Why are we doing this? There are different ways to identify the client, you need
 ```ts
 export class MyValidator implements Validator {
 
-  verifyHandshake(body: Buffer): ValidatorState {
+  verifyHandshake(handshakePayload: Buffer): ValidatorState {
   // vefify initial handshake
   }
   
-  verifyAcknowledgement(body: Buffer): ValidatorState {
+  verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
   // vefify acknowledgement data
   }
   
-  acknowledgement(body: Buffer): Buffer {
+  acknowledgement(handshakePayload: Buffer): Buffer {
   // data for acknowledgement after handshake validation passed
   }
   
-  handshake(body?: Buffer): Buffer {
+  handshake(customHandshakePayload?: Buffer): Buffer {
   // data for initial handshake
   }
 
@@ -109,11 +109,11 @@ Shardy uses a custom serializer for all transmitted data. Create a serializer cl
 ```ts
 export class MySerializer implements Serializer {
 
-  encode(body: PayloadData): Buffer {
+  encode(payload: PayloadData): Buffer {
   // encode PayloadData to Buffer for sending
   }
   
-  decode(body: Buffer): PayloadData {
+  decode(encodedPayload: Buffer): PayloadData {
   // decode recevied data and serialize it to PayloadData
   }
 

@@ -69,7 +69,7 @@ Shardy – это фреймворк для онлайн игр и прилож�
 Все ваши остальные объекты, классы, БД и т.д. должны быть связаны с этим классом, иначе вы не сможете получить к ним доступ из команд\запросов.
 
 ```ts
-import { TransportType, Service, Client } from 'shardy';
+import { TransportType, Service, Client, DisconnectReason } from 'shardy';
 
 export class MyService implements Service {
 
@@ -87,7 +87,7 @@ export class MyService implements Service {
     // новый клиент подключился
     }
 
-    async onDisconnect(client: Client): Promise<void> {
+    async onDisconnect(client: Client, reason: DisconnectReason): Promise<void> {
     // клиент отключился
     }
 
@@ -95,7 +95,7 @@ export class MyService implements Service {
     // клиент готов к работе
     }       
 
-    async onListening(): Promise<void> {
+    async onListening(host: string, port: number): Promise<void> {
     // сервис запущен
     }
 
@@ -201,19 +201,19 @@ import { Validator, ValidatorState } from 'shardy';
 
 export class MyHandshake implements Validator {
 
-    verifyHandshake(body: Buffer): ValidatorState {
+    verifyHandshake(handshakePayload: Buffer): ValidatorState {
     // проверка первоначального рукопожатия
     }
 
-    verifyAcknowledgement(body: Buffer): ValidatorState {
+    verifyAcknowledgement(acknowledgementPayload: Buffer): ValidatorState {
     // проверка данных подтверждения
     }
 
-    acknowledgement(body: Buffer): Buffer {
+    acknowledgement(handshakePayload: Buffer): Buffer {
     // данные для подтверждения после успешного первичного рукопожатия
     }
 
-    handshake(body?: Buffer): Buffer {
+    handshake(customHandshakePayload?: Buffer): Buffer {
     // данные для первичного рукопожатия
     }
 
@@ -234,11 +234,11 @@ import { PayloadData, Serializer } from 'shardy';
 
 export class MyJsonSerializer implements Serializer {
 
-    encode(body: PayloadData): Buffer {
+    encode(payload: PayloadData): Buffer {
     // перекодируйте PayloadData в Buffer для отправки
     }
 
-    decode(body: Buffer): PayloadData {
+    decode(encodedPayload: Buffer): PayloadData {
     // декодируйте полученные данные и сериализуйте в PayloadData
     }
 
