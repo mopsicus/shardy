@@ -47,7 +47,7 @@ test('creates, serializes, decodes, and validates public payload data', () => {
   assert.deepEqual(decoded, payload);
   assert.equal(Payload.check(decoded), true);
   assert.equal(Payload.check({ ...decoded, id: -1 }), false);
-  assert.equal(Payload.check({ ...decoded, data: 'not-buffer' }), false);
+  assert.equal(Payload.check({ ...decoded, data: 'custom serializer data' }), true);
   assert.deepEqual(Payload.create(PayloadType.Command, 'empty', 0), {
     type: PayloadType.Command,
     name: 'empty',

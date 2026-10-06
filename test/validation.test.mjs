@@ -46,6 +46,9 @@ function createCommander({ mode = CommanderMode.Service, serializer, validator }
 
 test('validates the runtime payload structure', () => {
   assert.equal(Payload.check({ type: PayloadType.Response, name: 'status', id: 1, data: Buffer.alloc(0), error: '' }), true);
+  assert.equal(Payload.check({ type: PayloadType.Response, name: 'status', id: 1, data: 'text', error: '' }), true);
+  assert.equal(Payload.check({ type: PayloadType.Response, name: 'status', id: 1, data: { value: 1 }, error: '' }), true);
+  assert.equal(Payload.check({ type: PayloadType.Response, name: 'status', id: 1, error: '' }), false);
   assert.equal(Payload.check({ type: PayloadType.Response, name: 'status', id: 1, data: Buffer.alloc(0) }), false);
   assert.equal(Payload.check(null), false);
 });
@@ -56,6 +59,10 @@ test('rejects malformed JSON and non-object payloads in DefaultSerializer', () =
   assert.throws(() => serializer.decode(Buffer.from('{')));
   assert.throws(() => serializer.decode(Buffer.from('[]')), /JSON object/);
   assert.throws(() => serializer.decode(Buffer.from('{"data":42}')), /base64 string/);
+  assert.throws(
+    () => serializer.encode({ type: PayloadType.Command, name: 'status', id: 0, data: 'text', error: '' }),
+    /payload data must be a Buffer/,
+  );
 });
 
 test('returns Failed for malformed default handshake messages', () => {

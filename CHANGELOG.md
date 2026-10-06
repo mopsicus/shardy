@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-10-06
+
+### Fixed
+- Allow custom serializers to decode payload data into values other than `Buffer`
+
 ## [1.4.0] - 2026-10-05
 
 ### Added

@@ -635,9 +635,9 @@ export interface PayloadData {
    */
   id: number;
   /**
-   * Data
+  * Data returned by the configured serializer
    */
-  data: Buffer;
+  data: unknown;
   /**
    * Error message or code
    */

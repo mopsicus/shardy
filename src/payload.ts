@@ -37,7 +37,7 @@ export interface PayloadData {
   /**
    * Data
    */
-  data: Buffer;
+  data: unknown;
   /**
    * Error message or code
    */
@@ -128,7 +128,7 @@ export class Payload {
       payloadFields.name.length > 0 &&
       Number.isSafeInteger(payloadFields.id) &&
       (payloadFields.id as number) >= 0 &&
-      Buffer.isBuffer(payloadFields.data) &&
+      Object.hasOwn(payloadFields, 'data') &&
       typeof payloadFields.error === 'string'
     );
   }

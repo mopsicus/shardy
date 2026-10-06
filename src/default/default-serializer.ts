@@ -17,7 +17,11 @@ export class DefaultSerializer implements Serializer {
    * @returns {Buffer} Serialized payload bytes
    */
   encode(payload: PayloadData): Buffer {
-    const serializedPayload = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, key === 'data' ? value.toString('base64') : value]));
+    const data = payload.data;
+    if (!Buffer.isBuffer(data)) {
+      throw new TypeError('payload data must be a Buffer');
+    }
+    const serializedPayload = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, key === 'data' ? data.toString('base64') : value]));
     const serializedJson = JSON.stringify(serializedPayload);
     return Buffer.from(serializedJson, 'utf-8');
   }
